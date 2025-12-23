@@ -11,6 +11,7 @@ import { i18n, isMultipleLocales } from '#root/bot/i18n.js';
 import { session } from '#root/bot/middlewares/session.js';
 import { updateLogger } from '#root/bot/middlewares/update-logger.js';
 import { autoChatAction } from '@grammyjs/auto-chat-action';
+import { conversations } from '@grammyjs/conversations';
 import { hydrate } from '@grammyjs/hydrate';
 import { hydrateReply, parseMode } from '@grammyjs/parse-mode';
 import { sequentialize } from '@grammyjs/runner';
@@ -59,6 +60,7 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
     storage: new MemorySessionStorage<SessionData>(),
   }));
   protectedBot.use(i18n);
+  protectedBot.use(conversations());
 
   // Handlers
   protectedBot.use(greetingFeature);

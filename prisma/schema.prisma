@@ -7,6 +7,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // Enum for the status of a video generation job
@@ -19,11 +20,12 @@ enum JobStatus {
 
 // Model for a Telegram User
 model User {
-  id        BigInt   @id
-  isBot     Boolean  @default(false)
-  firstName String
-  lastName  String?
-  username  String?
+  id          BigInt   @id
+  isBot       Boolean  @default(false)
+  firstName   String
+  lastName    String?
+  username    String?
+  phoneNumber String?
 
   jobs      VideoJob[]
 
