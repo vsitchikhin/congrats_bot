@@ -62,6 +62,6 @@
     "vitest": "^4.0.16"
   },
   "lint-staged": {
-    "*.ts": "eslint"
+    "*.ts": "eslint --fix"
   }
 }
