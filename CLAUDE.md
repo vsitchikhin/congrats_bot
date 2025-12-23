@@ -288,6 +288,8 @@ This project follows **SOLID**, **DRY** (Don't Repeat Yourself), and **KISS** (K
 **✅ Additionally, when writing code:**
 -   **Always** strive to adhere to **KISS** (Keep It Simple, Stupid), **DRY** (Don't Repeat Yourself), and **YAGNI** (You Ain't Gonna Need It) principles.
 -   **Always** ensure the code style conforms to the rules defined in `.eslintrc.js` (or `eslint.config.js`). Use `npm run format` to automatically fix formatting issues.
+-   **Always** wrap the narrow places of the changed components with tests. A task is not considered solved if the narrow places of the solution are not wrapped in tests.
+-   **Always** confirm your understanding of the task before starting. Before beginning implementation, explain what you plan to do, how it solves the task, and ask any clarifying questions.
 
 ---
 ---
