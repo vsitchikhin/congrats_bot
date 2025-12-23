@@ -22,6 +22,7 @@
     "start": "tsc && tsx ./src/main.ts",
     "start:force": "tsx ./src/main.ts",
     "worker": "tsx ./src/worker.ts",
+    "test": "vitest",
     "prepare": "husky || true"
   },
   "dependencies": {
