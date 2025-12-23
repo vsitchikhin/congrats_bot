@@ -101,7 +101,6 @@ dist
 
 # vuepress v2.x temp and cache directory
 .temp
-.cache
 
 # Serverless directories
 .serverless/
@@ -136,3 +135,4 @@ data/
 # Ignore SQLite database
 *.db
 *.db-journal
+/generated/prisma

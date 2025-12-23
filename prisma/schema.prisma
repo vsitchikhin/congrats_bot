@@ -1,0 +1,51 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enum for the status of a video generation job
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Model for a Telegram User
+model User {
+  id        BigInt   @id
+  isBot     Boolean  @default(false)
+  firstName String
+  lastName  String?
+  username  String?
+
+  jobs      VideoJob[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Model for a video generation job
+model VideoJob {
+  id                 String     @id @default(cuid())
+  childName          String
+  phoneNumber        String
+  status             JobStatus  @default(PENDING)
+  generatedVideoPath String?
+  tgFileId           String?
+
+  user    User   @relation(fields: [userId], references: [id])
+  userId  BigInt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([userId, status])
+}

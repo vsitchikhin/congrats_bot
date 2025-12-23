@@ -277,6 +277,19 @@ Task complete! Feature works perfectly.
 - **ONLY ASK USER:** When genuinely blocked or task is 100% complete
 
 ---
+
+## 6. Coding Guidelines & Best Practices
+
+To maintain a clean, scalable, and maintainable codebase, please adhere to the following principles.
+
+#### Core Principles
+This project follows **SOLID**, **DRY** (Don't Repeat Yourself), and **KISS** (Keep It Simple, Stupid) principles.
+
+**✅ Additionally, when writing code:**
+-   **Always** strive to adhere to **KISS** (Keep It Simple, Stupid), **DRY** (Don't Repeat Yourself), and **YAGNI** (You Ain't Gonna Need It) principles.
+-   **Always** ensure the code style conforms to the rules defined in `.eslintrc.js` (or `eslint.config.js`). Use `npm run format` to automatically fix formatting issues.
+
+---
 ---
 
 ## 📐 Project Architecture & Guidelines

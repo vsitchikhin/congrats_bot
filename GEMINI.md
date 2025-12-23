@@ -288,6 +288,10 @@ To maintain a clean, scalable, and maintainable codebase, please adhere to the f
 #### Core Principles
 This project follows **SOLID**, **DRY** (Don't Repeat Yourself), and **KISS** (Keep It Simple, Stupid) principles.
 
+**✅ Additionally, when writing code:**
+-   **Always** strive to adhere to **KISS** (Keep It Simple, Stupid), **DRY** (Don't Repeat Yourself), and **YAGNI** (You Ain't Gonna Need It) principles.
+-   **Always** ensure the code style conforms to the rules defined in `.eslintrc.js` (or `eslint.config.js`). Use `npm run format` to automatically fix formatting issues.
+
 #### Architecture
 Follow the established layered architecture. Logic should be separated by its concern:
 - **Features (`src/bot/features/`)**: Handle user interactions and command logic.

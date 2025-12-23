@@ -18,6 +18,7 @@
     "preserveWatchOutput": true
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "prisma.config.ts"
   ]
 }
