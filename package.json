@@ -23,6 +23,9 @@
     "start:force": "tsx ./src/main.ts",
     "worker": "tsx ./src/worker.ts",
     "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate",
     "prepare": "husky || true"
   },
   "dependencies": {

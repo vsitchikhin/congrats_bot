@@ -2,6 +2,7 @@
   "recommendations": [
     "dbaeumer.vscode-eslint",
     "macabeus.vscode-fluent",
-    "mikestead.dotenv"
+    "mikestead.dotenv",
+    "Prisma.prisma"
   ]
 }
