@@ -22,7 +22,7 @@
     "start": "tsc && tsx ./src/main.ts",
     "start:force": "tsx ./src/main.ts",
     "worker": "tsx ./src/worker.ts",
-    "test": "vitest",
+    "test": "vitest run",
     "prepare": "husky || true"
   },
   "dependencies": {
@@ -62,6 +62,7 @@
     "prisma": "^7.2.0",
     "tsc-watch": "^6.3.1",
     "typescript": "^5.9.2",
+    "vite-tsconfig-paths": "^6.0.3",
     "vitest": "^4.0.16"
   },
   "lint-staged": {
