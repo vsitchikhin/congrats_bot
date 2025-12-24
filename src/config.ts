@@ -4,7 +4,7 @@ import * as v from 'valibot';
 
 const baseConfigSchema = v.object({
   databaseUrl: v.pipe(v.string(), v.url()),
-  redisHost: v.optional(v.string(), 'localhost'),
+  redisHost: v.optional(v.string(), 'redis'),
   redisPort: v.optional(v.pipe(v.string(), v.transform(Number), v.number()), '6379'),
   debug: v.optional(v.pipe(v.string(), v.transform(JSON.parse), v.boolean()), 'false'),
   logLevel: v.optional(v.pipe(v.string(), v.picklist(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'])), 'info'),

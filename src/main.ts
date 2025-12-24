@@ -4,6 +4,7 @@
 import type { PollingConfig, WebhookConfig } from '#root/config.js';
 import type { RunnerHandle } from '@grammyjs/runner';
 import process from 'node:process';
+import { setBotCommands } from '#root/bot/helpers/set-commands.js';
 import { createBot } from '#root/bot/index.js';
 import { config } from '#root/config.js';
 import { logger } from '#root/logger.js';
@@ -27,6 +28,9 @@ async function startPolling(config: PollingConfig) {
     bot.init(),
     bot.api.deleteWebhook(),
   ]);
+
+  // set commands
+  await setBotCommands(bot);
 
   // start bot
   runner = run(bot, {
@@ -66,6 +70,9 @@ async function startWebhook(config: WebhookConfig) {
 
   // to prevent receiving updates before the bot is ready
   await bot.init();
+
+  // set commands
+  await setBotCommands(bot);
 
   // start server
   const info = await serverManager.start();

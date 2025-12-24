@@ -1,5 +1,9 @@
 version: '3.8'
 
+# For this to work, you need a .env file in the root of your project
+# with at least the following variable:
+# BOT_TOKEN=123456:ABC-DEF1234567890
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -22,6 +26,33 @@ services:
     volumes:
       - redis-data:/data
     restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: new_year_bot_bot
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/new_year_bot
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BOT_TOKEN=${BOT_TOKEN} # This is read from your .env file
+      - BOT_MODE=polling
+    command: sh -c "npx prisma migrate deploy && npm run start:prod"
+
+  worker:
+    build: .
+    container_name: new_year_bot_worker
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/new_year_bot
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - BOT_TOKEN=${BOT_TOKEN} # This is read from your .env file
+    command: npm run worker:prod
 
 volumes:
   postgres-data:

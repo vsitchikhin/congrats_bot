@@ -1,3 +1,5 @@
+/* eslint-disable ts/no-unsafe-argument */
+/* eslint-disable ts/unbound-method */
 import type { Context } from '#root/bot/context.js';
 import type { UserFromGetMe } from '@grammyjs/types';
 import type { Mock } from 'vitest';
@@ -16,7 +18,18 @@ vi.mock('#root/db/client.js', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    videoJob: {
+      create: vi.fn(),
+    },
   },
+}));
+
+// Mock BullMQ queue
+const mockQueue = {
+  add: vi.fn(),
+};
+vi.mock('#root/queue/definitions/greeting.js', () => ({
+  getGreetingQueue: vi.fn(() => mockQueue),
 }));
 
 // Mock pino logger
@@ -180,8 +193,6 @@ describe('greetingFeature - Database Integration', () => {
 
     const { user } = prisma;
     // Access the mock through the module mock (type assertion needed for mock methods)
-    // Vitest mocks are standalone functions, safe to use without binding
-    // eslint-disable-next-line ts/unbound-method
     const upsertMock = user.upsert as Mock;
     upsertMock.mockResolvedValue({
       id: testUserId,
@@ -240,8 +251,6 @@ describe('greetingFeature - Database Integration', () => {
     const dbError = new Error('Database connection failed');
     const { user } = prisma;
     // Access the mock through the module mock (type assertion needed for mock methods)
-    // Vitest mocks are standalone functions, safe to use without binding
-    // eslint-disable-next-line ts/unbound-method
     const upsertMock = user.upsert as Mock;
     upsertMock.mockRejectedValue(dbError);
 
@@ -255,5 +264,160 @@ describe('greetingFeature - Database Integration', () => {
         firstName: 'Test',
       },
     })).rejects.toThrow('Database connection failed');
+  });
+});
+
+describe('greetingFeature - Save and Queue Flow', () => {
+  let conversation: any;
+  let ctx: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { prisma } = await import('#root/db/client.js');
+
+    // Mock Prisma and Queue modules
+    vi.mocked(prisma.user.upsert).mockResolvedValue({} as any);
+
+    // Mock conversation object
+    conversation = {
+      wait: vi.fn(),
+      update: vi.fn(),
+      log: vi.fn(),
+    };
+
+    // Mock context object
+    ctx = {
+      from: { id: 123, first_name: 'Test', is_bot: false },
+      reply: vi.fn(),
+      answerCallbackQuery: vi.fn(),
+      t: (key: string) => key, // Mock i18n
+    };
+  });
+
+  it('should create video job and add to queue on successful conversation', async () => {
+    const { prisma } = await import('#root/db/client.js');
+    const { getGreetingQueue } = await import(
+      '#root/queue/definitions/greeting.js'
+    );
+    const { greetingConversation } = await import(
+      '#root/bot/features/greeting.js'
+    );
+    const queue = getGreetingQueue();
+
+    // Mocks for this specific test
+    vi.mocked(prisma.videoJob.create).mockResolvedValue({ id: 'job-123' } as any);
+    vi.mocked(queue.add).mockResolvedValue({} as any);
+
+    // Simulate conversation steps
+    conversation.wait
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { contact: { phone_number: '+1234567890' } },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { text: 'Алиса' },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        callbackQuery: { data: 'confirm_yes' },
+      });
+
+    // Run the conversation logic
+    await greetingConversation(conversation, ctx);
+
+    // Assertions
+    expect(prisma.user.upsert).toHaveBeenCalled();
+    expect(prisma.videoJob.create).toHaveBeenCalledWith({
+      data: {
+        userId: BigInt(123),
+        childName: 'Алиса',
+        phoneNumber: '+1234567890',
+        status: 'PENDING',
+      },
+    });
+    expect(queue.add).toHaveBeenCalledWith('generate-video', {
+      jobId: 'job-123',
+    });
+    expect(ctx.reply).toHaveBeenCalledWith(
+      '⏳ Отлично! Ваш заказ принят в обработку...',
+    );
+  });
+
+  it('should handle database error when creating video job', async () => {
+    const { prisma } = await import('#root/db/client.js');
+    const { getGreetingQueue } = await import(
+      '#root/queue/definitions/greeting.js'
+    );
+    const { greetingConversation } = await import(
+      '#root/bot/features/greeting.js'
+    );
+    const queue = getGreetingQueue();
+    const dbError = new Error('DB Error');
+    vi.mocked(prisma.videoJob.create).mockRejectedValue(dbError);
+
+    // Simulate conversation steps
+    conversation.wait
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { contact: { phone_number: '+1234567890' } },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { text: 'Алиса' },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        callbackQuery: { data: 'confirm_yes' },
+      });
+
+    // Run the conversation logic
+    await greetingConversation(conversation, ctx);
+
+    // Assertions
+    expect(prisma.videoJob.create).toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(ctx.reply).toHaveBeenCalledWith(
+      'Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже, используя команду /start',
+    );
+  });
+
+  it('should handle queue error when adding job', async () => {
+    const { prisma } = await import('#root/db/client.js');
+    const { getGreetingQueue } = await import(
+      '#root/queue/definitions/greeting.js'
+    );
+    const { greetingConversation } = await import(
+      '#root/bot/features/greeting.js'
+    );
+    const queue = getGreetingQueue();
+    const queueError = new Error('Queue Error');
+    vi.mocked(prisma.videoJob.create).mockResolvedValue({ id: 'job-123' } as any);
+    vi.mocked(queue.add).mockRejectedValue(queueError);
+
+    // Simulate conversation steps
+    conversation.wait
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { contact: { phone_number: '+1234567890' } },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { text: 'Алиса' },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        callbackQuery: { data: 'confirm_yes' },
+      });
+
+    // Run the conversation logic
+    await greetingConversation(conversation, ctx);
+
+    // Assertions
+    expect(prisma.videoJob.create).toHaveBeenCalled();
+    expect(queue.add).toHaveBeenCalled();
+    expect(ctx.reply).toHaveBeenCalledWith(
+      'Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже, используя команду /start',
+    );
   });
 });

@@ -17,6 +17,7 @@ export default antfu(
       indent: 2,
       quotes: 'single',
       semi: true,
+      braceStyle: '1tbs',
     },
 
     // Custom ignores

@@ -1,6 +1,8 @@
 import type { BaseContext, Context } from '#root/bot/context.js';
 import type { Conversation } from '@grammyjs/conversations';
 import { prisma } from '#root/db/client.js';
+import { logger } from '#root/logger.js';
+import { getGreetingQueue } from '#root/queue/definitions/greeting.js';
 import { createConversation } from '@grammyjs/conversations';
 import { Composer, InlineKeyboard, Keyboard } from 'grammy';
 
@@ -20,7 +22,7 @@ interface ValidationResult {
   errorKey?: string;
 }
 
-function validateChildName(name: string): ValidationResult {
+export function validateChildName(name: string): ValidationResult {
   const trimmedName = name.trim();
 
   if (trimmedName.length < MIN_NAME_LENGTH) {
@@ -39,7 +41,7 @@ function validateChildName(name: string): ValidationResult {
 }
 
 // Main conversation function
-async function greetingConversation(
+export async function greetingConversation(
   conversation: Conversation<Context, BaseContext>,
   ctx: BaseContext,
 ) {
@@ -106,7 +108,7 @@ async function greetingConversation(
     });
   }
   catch (error) {
-    console.error('Failed to save user to database:', error, { userId: ctx.from!.id });
+    logger.error({ error, userId: ctx.from!.id }, 'Failed to save user to database');
     await ctx.reply('Произошла ошибка при сохранении данных. Попробуйте еще раз позже.');
     return;
   }
@@ -191,8 +193,41 @@ async function greetingConversation(
     }
   }
 
-  // Step 4: Create video job (TODO: Task 2.3 - add to BullMQ queue)
-  await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку...');
+  // Step 4: Create video job and add to queue
+  try {
+    // Create VideoJob in database
+    const videoJob = await prisma.videoJob.create({
+      data: {
+        userId: BigInt(ctx.from!.id),
+        childName,
+        phoneNumber,
+        status: 'PENDING',
+      },
+    });
+
+    try {
+      // Add job to BullMQ queue
+      const queue = getGreetingQueue();
+      await queue.add('generate-video', {
+        jobId: videoJob.id,
+      });
+
+      await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку...');
+    }
+    catch (queueError) {
+      // If queue fails, mark job as FAILED
+      logger.error({ error: queueError, jobId: videoJob.id }, 'Failed to add job to queue');
+      await prisma.videoJob.update({
+        where: { id: videoJob.id },
+        data: { status: 'FAILED' },
+      });
+      throw queueError; // Re-throw to outer catch
+    }
+  }
+  catch (error) {
+    logger.error({ error }, 'Failed to create video job');
+    await ctx.reply('Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже, используя команду /start');
+  }
 }
 
 // Register the conversation
