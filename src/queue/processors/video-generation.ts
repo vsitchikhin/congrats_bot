@@ -1,18 +1,18 @@
-import type { GreetingJobData } from '#root/queue/definitions/greeting.js';
+import type { VideoGenerationJobData } from '#root/queue/definitions/video-generation.js';
 import type { Job } from 'bullmq';
 import type { Bot } from 'grammy';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
 
 /**
- * Creates a processor function for the greeting queue.
+ * Creates a processor function for the video-generation queue.
  * The processor handles video generation jobs and sends the result to users.
  *
  * @param botApi The Bot API instance for sending messages to users.
  * @returns A processor function that will be called by the worker for each job.
  */
-export function createGreetingProcessor(botApi: Bot['api']) {
-  return async (job: Job<GreetingJobData>) => {
+export function createVideoGenerationProcessor(botApi: Bot['api']) {
+  return async (job: Job<VideoGenerationJobData>) => {
     const { jobId } = job.data;
 
     try {

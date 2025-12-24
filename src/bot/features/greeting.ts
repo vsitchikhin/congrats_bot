@@ -2,7 +2,7 @@ import type { BaseContext, Context } from '#root/bot/context.js';
 import type { Conversation } from '@grammyjs/conversations';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
-import { getGreetingQueue } from '#root/queue/definitions/greeting.js';
+import { getVideoGenerationQueue } from '#root/queue/definitions/video-generation.js';
 import { createConversation } from '@grammyjs/conversations';
 import { Composer, InlineKeyboard, Keyboard } from 'grammy';
 
@@ -207,7 +207,7 @@ export async function greetingConversation(
 
     try {
       // Add job to BullMQ queue
-      const queue = getGreetingQueue();
+      const queue = getVideoGenerationQueue();
       await queue.add('generate-video', {
         jobId: videoJob.id,
       });

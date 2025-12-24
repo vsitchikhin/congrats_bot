@@ -1,6 +1,6 @@
 import { config } from '#root/config.js';
 import { logger } from '#root/logger.js';
-import { createGreetingProcessor } from '#root/queue/processors/greeting.js';
+import { createVideoGenerationProcessor } from '#root/queue/processors/video-generation.js';
 import { Worker } from 'bullmq';
 import { Bot } from 'grammy';
 
@@ -15,7 +15,7 @@ const connection = {
 const bot = new Bot(config.botToken);
 
 // The worker is responsible for processing jobs from the queue.
-const worker = new Worker('greeting', createGreetingProcessor(bot.api), {
+const worker = new Worker('video-generation', createVideoGenerationProcessor(bot.api), {
   connection,
   autorun: true,
   concurrency: 5, // Process up to 5 jobs at once

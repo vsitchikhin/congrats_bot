@@ -28,8 +28,8 @@ vi.mock('#root/db/client.js', () => ({
 const mockQueue = {
   add: vi.fn(),
 };
-vi.mock('#root/queue/definitions/greeting.js', () => ({
-  getGreetingQueue: vi.fn(() => mockQueue),
+vi.mock('#root/queue/definitions/video-generation.js', () => ({
+  getVideoGenerationQueue: vi.fn(() => mockQueue),
 }));
 
 // Mock pino logger
@@ -296,13 +296,13 @@ describe('greetingFeature - Save and Queue Flow', () => {
 
   it('should create video job and add to queue on successful conversation', async () => {
     const { prisma } = await import('#root/db/client.js');
-    const { getGreetingQueue } = await import(
-      '#root/queue/definitions/greeting.js'
+    const { getVideoGenerationQueue } = await import(
+      '#root/queue/definitions/video-generation.js'
     );
     const { greetingConversation } = await import(
       '#root/bot/features/greeting.js'
     );
-    const queue = getGreetingQueue();
+    const queue = getVideoGenerationQueue();
 
     // Mocks for this specific test
     vi.mocked(prisma.videoJob.create).mockResolvedValue({ id: 'job-123' } as any);
@@ -346,13 +346,13 @@ describe('greetingFeature - Save and Queue Flow', () => {
 
   it('should handle database error when creating video job', async () => {
     const { prisma } = await import('#root/db/client.js');
-    const { getGreetingQueue } = await import(
-      '#root/queue/definitions/greeting.js'
+    const { getVideoGenerationQueue } = await import(
+      '#root/queue/definitions/video-generation.js'
     );
     const { greetingConversation } = await import(
       '#root/bot/features/greeting.js'
     );
-    const queue = getGreetingQueue();
+    const queue = getVideoGenerationQueue();
     const dbError = new Error('DB Error');
     vi.mocked(prisma.videoJob.create).mockRejectedValue(dbError);
 
@@ -384,13 +384,13 @@ describe('greetingFeature - Save and Queue Flow', () => {
 
   it('should handle queue error when adding job', async () => {
     const { prisma } = await import('#root/db/client.js');
-    const { getGreetingQueue } = await import(
-      '#root/queue/definitions/greeting.js'
+    const { getVideoGenerationQueue } = await import(
+      '#root/queue/definitions/video-generation.js'
     );
     const { greetingConversation } = await import(
       '#root/bot/features/greeting.js'
     );
-    const queue = getGreetingQueue();
+    const queue = getVideoGenerationQueue();
     const queueError = new Error('Queue Error');
     vi.mocked(prisma.videoJob.create).mockResolvedValue({ id: 'job-123' } as any);
     vi.mocked(queue.add).mockRejectedValue(queueError);
