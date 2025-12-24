@@ -22,7 +22,7 @@
 *   `src/bot/context.ts` (для расширения контекста)
 *   `src/bot/features/greeting.ts`
 *   `src/bot/index.ts`
-*   `locales/en.ftl`, `locales/ru.ftl`
+*   `locales/ru.ftl`
 
 ## Потенциальные риски
 *   Сложность в обработке состояний внутри беседы.

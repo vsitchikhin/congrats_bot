@@ -160,6 +160,7 @@ async function greetingConversation(
 
     await ctx.reply(`Вы указали имя: <b>${childName}</b>. Всё верно?`, {
       reply_markup: keyboard,
+      parse_mode: 'HTML',
     });
 
     // Wait for confirmation button click
@@ -184,6 +185,7 @@ async function greetingConversation(
       // User sent a message instead of clicking button, ignore and wait again
       await ctx.reply(`Вы указали имя: <b>${childName}</b>. Всё верно?`, {
         reply_markup: keyboard,
+        parse_mode: 'HTML',
       });
       continue;
     }
