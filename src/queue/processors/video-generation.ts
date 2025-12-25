@@ -50,6 +50,8 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
         new InputFile(videoPath),
         {
           caption: 'Вот ваше персональное новогоднее поздравление! 🎉',
+          width: 1920,
+          height: 1080,
         },
       );
 

@@ -21,11 +21,6 @@ export async function setBotCommands(bot: Bot<Context>) {
     .addToScope({ type: 'all_private_chats' });
   addCommandLocalizations(start);
 
-  const language = new Command('language', i18n.t('en', 'language.description'))
-    .addToScope({ type: 'all_private_chats' });
-  addCommandLocalizations(language);
-
-  // Admin-only commands
   const setcommands = new Command('setcommands', i18n.t('en', 'setcommands.description'));
   for (const adminId of config.botAdmins) {
     setcommands.addToScope({ type: 'chat', chat_id: adminId });
@@ -33,7 +28,6 @@ export async function setBotCommands(bot: Bot<Context>) {
 
   const commands = new CommandGroup()
     .add(start)
-    .add(language)
     .add(setcommands);
 
   await commands.setCommands({ api: bot.api });
