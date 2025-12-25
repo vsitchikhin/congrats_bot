@@ -4,7 +4,7 @@ import type { Bot } from 'grammy';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
 import { ttsService } from '#root/services/tts.js';
-import { InputFile } from 'grammy';
+import { InlineKeyboard, InputFile } from 'grammy';
 
 /**
  * Creates a processor function for the video-generation queue.
@@ -62,11 +62,16 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
 
       logger.info(`Job ${jobId} completed successfully!`);
 
+      // Create keyboard with "Order another video" button
+      const keyboard = new InlineKeyboard()
+        .text('🎄 Заказать еще одно видео', 'order_another_video');
+
       // Temporary: Send a text message to notify completion and show audio path
       await botApi.sendMessage(
         // @ts-expect-error bigint to number conversion
         Number.parseInt(videoJob.userId),
         `Your audio greeting for ${videoJob.childName} is ready! (Audio generated at: ${audioPath})`,
+        { reply_markup: keyboard },
       );
     }
     catch (error) {
