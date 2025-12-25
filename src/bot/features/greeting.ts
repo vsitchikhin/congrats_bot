@@ -10,6 +10,129 @@ const composer = new Composer<Context>();
 
 const GREETING_CONVERSATION_NAME = 'greeting';
 
+// Cache duration: 7 days in milliseconds
+const CACHE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Helper to check if cache is expired (7 days)
+function isCacheExpired(createdAt: Date): boolean {
+  const now = new Date();
+  return now.getTime() - createdAt.getTime() > CACHE_DURATION_MS;
+}
+
+// Helper to normalize child name (lowercase for uniqueness)
+function normalizeChildName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+// Result type for video request handling
+interface VideoRequestResult {
+  type: 'send_cached' | 'subscribed' | 'generate';
+  fileId?: string;
+  assetId?: string;
+  assetName?: string;
+}
+
+// Main function to handle video request with caching and deduplication
+async function handleVideoRequest(
+  userId: bigint,
+  childName: string,
+): Promise<VideoRequestResult> {
+  const normalizedName = normalizeChildName(childName);
+
+  return prisma.$transaction(async (tx) => {
+    // 1. Find existing VideoAsset for this name
+    let asset = await tx.videoAsset.findUnique({
+      where: { name: normalizedName },
+    });
+
+    let shouldGenerateVideo = false;
+
+    if (!asset) {
+      // Asset doesn't exist - create new one
+      asset = await tx.videoAsset.create({
+        data: {
+          name: normalizedName,
+          status: 'PENDING',
+        },
+      });
+      shouldGenerateVideo = true;
+      logger.info({ userId, assetId: asset.id, childName, normalizedName }, '🆕 New VideoAsset created');
+    }
+    else {
+      // Asset exists - check its status and cache validity
+      logger.info({ userId, assetId: asset.id, status: asset.status, childName }, '📦 Found existing VideoAsset');
+
+      if (asset.status === 'AVAILABLE' && asset.telegramFileId !== null && !isCacheExpired(asset.createdAt)) {
+        // Cache hit! Video is ready and not expired
+        logger.info({ userId, assetId: asset.id, childName }, '⚡ Cache hit - video ready for instant delivery');
+
+        // Create UserRequest as COMPLETED
+        await tx.userRequest.create({
+          data: {
+            userId,
+            assetId: asset.id,
+            status: 'COMPLETED',
+          },
+        });
+
+        return {
+          type: 'send_cached',
+          fileId: asset.telegramFileId,
+          assetName: asset.name,
+        };
+      }
+      else if (asset.status === 'PENDING' || asset.status === 'GENERATING') {
+        // Video is currently being generated - subscribe to result
+        logger.info({ userId, assetId: asset.id, childName }, '🔔 Video is being generated - subscribing user');
+
+        await tx.userRequest.create({
+          data: {
+            userId,
+            assetId: asset.id,
+            status: 'PENDING',
+          },
+        });
+
+        return { type: 'subscribed' };
+      }
+      else if (asset.status === 'FAILED' || (asset.status === 'AVAILABLE' && isCacheExpired(asset.createdAt))) {
+        // Video generation failed or cache expired - regenerate
+        const reason = asset.status === 'FAILED' ? 'failed' : 'expired';
+        logger.info({ userId, assetId: asset.id, childName, reason }, '🔄 Regenerating video');
+
+        // Reset asset to PENDING and clear old file_id
+        await tx.videoAsset.update({
+          where: { id: asset.id },
+          data: {
+            status: 'PENDING',
+            telegramFileId: null,
+          },
+        });
+
+        shouldGenerateVideo = true;
+      }
+    }
+
+    // Create UserRequest for new generation or regeneration
+    await tx.userRequest.create({
+      data: {
+        userId,
+        assetId: asset.id,
+        status: 'PENDING',
+      },
+    });
+
+    if (shouldGenerateVideo) {
+      return { type: 'generate', assetId: asset.id };
+    }
+
+    // This shouldn't happen, but just in case
+    return { type: 'subscribed' };
+  }, {
+    isolationLevel: 'Serializable', // Prevent race conditions
+  });
+}
+
 // Track users who are ordering without conversation (for repeat orders)
 const orderingWithoutConversation = new Map<number, { step: 'waiting_name' | 'waiting_confirm'; childName?: string }>();
 
@@ -161,7 +284,9 @@ export async function greetingConversation(
   let isConfirmed = false;
 
   while (!isConfirmed) {
-    await ctx.reply('Пожалуйста, введите имя ребенка:');
+    await ctx.reply('Пожалуйста, введите имя ребенка:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
+      parse_mode: 'HTML',
+    });
 
     // Wait for user's response (only accept text messages, ignore audio/video from worker)
     const nameCtx = await conversation.waitFor('message:text');
@@ -235,35 +360,40 @@ export async function greetingConversation(
     }
   }
 
-  // Step 5: Create video job and add to queue
+  // Step 5: Handle video request with caching and deduplication
   try {
-    logger.info({ userId: ctx.from!.id, conversationId, childName }, '🎬 Creating video job...');
+    logger.info({ userId: ctx.from!.id, conversationId, childName }, '🎬 Processing video request...');
 
-    // Create VideoJob in database
-    const videoJob = await prisma.videoJob.create({
-      data: {
-        userId: BigInt(ctx.from!.id),
-        childName,
-        phoneNumber,
-        status: 'PENDING',
-      },
-    });
+    const result = await handleVideoRequest(BigInt(ctx.from!.id), childName);
 
-    logger.info({ userId: ctx.from!.id, conversationId, jobId: videoJob.id, childName }, '✅ Video job created in DB');
+    if (result.type === 'send_cached') {
+      // Video is already available - send it immediately
+      logger.info({ userId: ctx.from!.id, conversationId, childName }, '📤 Sending cached video');
+      await ctx.replyWithVideo(result.fileId!);
+      await ctx.reply('✅ Видео готово! Можете заказать еще одно поздравление.', {
+        reply_markup: new InlineKeyboard().text('🎬 Заказать еще одно видео', 'order_another_video'),
+      });
+    }
+    else if (result.type === 'subscribed') {
+      // Video is being generated by another request - user is now subscribed
+      logger.info({ userId: ctx.from!.id, conversationId, childName }, '🔔 User subscribed to existing generation task');
+      await ctx.reply('⏳ Видео для этого имени уже генерируется! Мы отправим его вам, как только оно будет готово.');
+    }
+    else if (result.type === 'generate') {
+      // New video generation needed - add to queue
+      logger.info({ userId: ctx.from!.id, conversationId, assetId: result.assetId, childName }, '➕ Adding new generation task to queue');
 
-    // Add job to BullMQ queue
-    const queue = getVideoGenerationQueue();
-    await queue.add('generate-video', {
-      jobId: videoJob.id,
-    });
+      const queue = getVideoGenerationQueue();
+      await queue.add('generate-video', {
+        assetId: result.assetId!,
+      });
 
-    logger.info({ userId: ctx.from!.id, conversationId, jobId: videoJob.id }, '✅ Job added to queue');
-
-    // Show success message (button will appear after video is ready)
-    await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку. Видео будет готово в ближайшее время!');
+      logger.info({ userId: ctx.from!.id, conversationId, assetId: result.assetId }, '✅ Task added to queue');
+      await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку. Видео будет готово в ближайшее время!');
+    }
   }
   catch (error) {
-    logger.error({ userId: ctx.from!.id, conversationId, error }, '❌ Failed to create video job or add to queue');
+    logger.error({ userId: ctx.from!.id, conversationId, error }, '❌ Failed to process video request');
     await ctx.reply('Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже, используя команду /start');
   }
 
@@ -301,7 +431,9 @@ composer.callbackQuery('order_another_video', async (ctx) => {
   // Start ordering process without conversation
   orderingWithoutConversation.set(ctx.from.id, { step: 'waiting_name' });
 
-  await ctx.reply('Отлично! Давайте создадим еще одно поздравление.\n\nПожалуйста, введите имя ребенка:');
+  await ctx.reply('Отлично! Давайте создадим еще одно поздравление.\n\nПожалуйста, введите имя ребенка:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
+    parse_mode: 'HTML',
+  });
 });
 
 // Handle messages for users ordering without conversation
@@ -377,47 +509,44 @@ composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx
     return;
   }
 
-  // User confirmed - create video job
+  // User confirmed - process video request
   const childName = orderState.childName;
   orderingWithoutConversation.delete(ctx.from.id);
   reorderingUsers.delete(ctx.from.id);
 
   try {
-    // Get user's phone number from database
-    const user = await prisma.user.findUnique({
-      where: { id: BigInt(ctx.from.id) },
-      select: { phoneNumber: true },
-    });
+    logger.info({ userId: ctx.from.id, childName }, '🎬 Processing reorder video request...');
 
-    if (!user || user.phoneNumber === null) {
-      await ctx.reply('❌ Ошибка: номер телефона не найден. Пожалуйста, используйте /start');
-      return;
+    const result = await handleVideoRequest(BigInt(ctx.from.id), childName);
+
+    if (result.type === 'send_cached') {
+      // Video is already available - send it immediately
+      logger.info({ userId: ctx.from.id, childName }, '📤 Sending cached video (reorder)');
+      await ctx.replyWithVideo(result.fileId!);
+      await ctx.reply('✅ Видео готово! Можете заказать еще одно поздравление.', {
+        reply_markup: new InlineKeyboard().text('🎬 Заказать еще одно видео', 'order_another_video'),
+      });
     }
+    else if (result.type === 'subscribed') {
+      // Video is being generated by another request - user is now subscribed
+      logger.info({ userId: ctx.from.id, childName }, '🔔 User subscribed to existing generation task (reorder)');
+      await ctx.reply('⏳ Видео для этого имени уже генерируется! Мы отправим его вам, как только оно будет готово.');
+    }
+    else if (result.type === 'generate') {
+      // New video generation needed - add to queue
+      logger.info({ userId: ctx.from.id, assetId: result.assetId, childName }, '➕ Adding new generation task to queue (reorder)');
 
-    // Create VideoJob in database
-    const videoJob = await prisma.videoJob.create({
-      data: {
-        userId: BigInt(ctx.from.id),
-        childName,
-        phoneNumber: user.phoneNumber,
-        status: 'PENDING',
-      },
-    });
+      const queue = getVideoGenerationQueue();
+      await queue.add('generate-video', {
+        assetId: result.assetId!,
+      });
 
-    logger.info({ userId: ctx.from.id, jobId: videoJob.id, childName }, '✅ Reorder video job created in DB');
-
-    // Add job to BullMQ queue
-    const queue = getVideoGenerationQueue();
-    await queue.add('generate-video', {
-      jobId: videoJob.id,
-    });
-
-    logger.info({ userId: ctx.from.id, jobId: videoJob.id }, '✅ Reorder job added to queue');
-
-    await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку. Видео будет готово в ближайшее время!');
+      logger.info({ userId: ctx.from.id, assetId: result.assetId }, '✅ Reorder task added to queue');
+      await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку. Видео будет готово в ближайшее время!');
+    }
   }
   catch (error) {
-    logger.error({ userId: ctx.from.id, error }, '❌ Failed to create reorder video job');
+    logger.error({ userId: ctx.from.id, error }, '❌ Failed to process reorder video request');
     await ctx.reply('Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже.');
   }
 });

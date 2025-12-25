@@ -17,9 +17,26 @@ vi.mock('#root/db/client.js', () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
-    videoJob: {
+    videoAsset: {
+      findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
+    userRequest: {
+      create: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    $transaction: vi.fn((fn: any) => fn({
+      videoAsset: {
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      userRequest: {
+        create: vi.fn(),
+        updateMany: vi.fn(),
+      },
+    })),
   },
 }));
 
@@ -284,7 +301,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     };
   });
 
-  it('should create video job and add to queue on successful conversation', async () => {
+  it('should create video asset and add to queue on successful conversation', async () => {
     const { prisma } = await import('#root/db/client.js');
     const { getVideoGenerationQueue } = await import(
       '#root/queue/definitions/video-generation.js'
@@ -294,8 +311,20 @@ describe('greetingFeature - Save and Queue Flow', () => {
     );
     const queue = getVideoGenerationQueue();
 
-    // Mocks for this specific test
-    vi.mocked(prisma.videoJob.create).mockResolvedValue({ id: 'job-123' } as any);
+    // Mock transaction to create new asset
+    const mockAsset = { id: 'asset-123', name: 'алиса', status: 'PENDING' };
+    vi.mocked(prisma.$transaction).mockImplementation(async (fn: any) => {
+      const tx = {
+        videoAsset: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue(mockAsset),
+        },
+        userRequest: {
+          create: vi.fn().mockResolvedValue({}),
+        },
+      };
+      return fn(tx);
+    });
     vi.mocked(queue.add).mockResolvedValue({} as any);
 
     // Simulate conversation steps
@@ -318,23 +347,13 @@ describe('greetingFeature - Save and Queue Flow', () => {
 
     // Assertions
     expect(prisma.user.upsert).toHaveBeenCalled();
-    expect(prisma.videoJob.create).toHaveBeenCalledWith({
-      data: {
-        userId: BigInt(123),
-        childName: 'Алиса',
-        phoneNumber: '+1234567890',
-        status: 'PENDING',
-      },
-    });
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalledWith('generate-video', {
-      jobId: 'job-123',
+      assetId: 'asset-123',
     });
-    expect(ctx.reply).toHaveBeenCalledWith(
-      '⏳ Отлично! Ваш заказ принят в обработку...',
-    );
   });
 
-  it('should handle database error when creating video job', async () => {
+  it('should handle database error when creating video asset', async () => {
     const { prisma } = await import('#root/db/client.js');
     const { getVideoGenerationQueue } = await import(
       '#root/queue/definitions/video-generation.js'
@@ -344,7 +363,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     );
     const queue = getVideoGenerationQueue();
     const dbError = new Error('DB Error');
-    vi.mocked(prisma.videoJob.create).mockRejectedValue(dbError);
+    vi.mocked(prisma.$transaction).mockRejectedValue(dbError);
 
     // Simulate conversation steps
     conversation.wait
@@ -365,7 +384,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     await greetingConversation(conversation, ctx);
 
     // Assertions
-    expect(prisma.videoJob.create).toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(queue.add).not.toHaveBeenCalled();
     expect(ctx.reply).toHaveBeenCalledWith(
       'Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже, используя команду /start',
@@ -382,7 +401,20 @@ describe('greetingFeature - Save and Queue Flow', () => {
     );
     const queue = getVideoGenerationQueue();
     const queueError = new Error('Queue Error');
-    vi.mocked(prisma.videoJob.create).mockResolvedValue({ id: 'job-123' } as any);
+
+    const mockAsset = { id: 'asset-123', name: 'алиса', status: 'PENDING' };
+    vi.mocked(prisma.$transaction).mockImplementation(async (fn: any) => {
+      const tx = {
+        videoAsset: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue(mockAsset),
+        },
+        userRequest: {
+          create: vi.fn().mockResolvedValue({}),
+        },
+      };
+      return fn(tx);
+    });
     vi.mocked(queue.add).mockRejectedValue(queueError);
 
     // Simulate conversation steps
@@ -404,7 +436,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     await greetingConversation(conversation, ctx);
 
     // Assertions
-    expect(prisma.videoJob.create).toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalled();
     expect(ctx.reply).toHaveBeenCalledWith(
       'Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже, используя команду /start',

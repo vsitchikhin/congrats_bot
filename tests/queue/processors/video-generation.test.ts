@@ -9,9 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mock Prisma client
 vi.mock('#root/db/client.js', () => ({
   prisma: {
-    videoJob: {
+    videoAsset: {
       update: vi.fn(),
       findUnique: vi.fn(),
+    },
+    userRequest: {
+      updateMany: vi.fn(),
     },
   },
 }));
@@ -28,6 +31,13 @@ vi.mock('#root/logger.js', () => ({
 vi.mock('#root/services/tts.js', () => ({
   ttsService: {
     generate: vi.fn().mockResolvedValue('/path/to/mock/audio.mp3'),
+  },
+}));
+
+// Mock Video Service
+vi.mock('#root/services/video.js', () => ({
+  videoService: {
+    mergeAudioWithVideo: vi.fn().mockResolvedValue('/path/to/mock/video.mp4'),
   },
 }));
 
@@ -55,14 +65,16 @@ describe('createVideoGenerationProcessor', () => {
     // Mock Bot API
     botApi = {
       sendMessage: vi.fn().mockResolvedValue({}),
-      sendAudio: vi.fn().mockResolvedValue({}),
+      sendVideo: vi.fn().mockResolvedValue({
+        video: { file_id: 'mock-telegram-file-id' },
+      }),
     };
 
     // Mock Job
     mockJob = {
       id: 'test-job-id',
       data: {
-        jobId: 'video-job-123',
+        assetId: 'asset-123',
       },
     };
   });
@@ -71,71 +83,84 @@ describe('createVideoGenerationProcessor', () => {
     vi.useRealTimers();
   });
 
-  it('should process job successfully and update status to COMPLETED', async () => {
+  it('should process job successfully and broadcast to all subscribers', async () => {
     const { prisma } = await import('#root/db/client.js');
     const { createVideoGenerationProcessor } = await import(
       '#root/queue/processors/video-generation.js'
     );
     const { ttsService } = await import('#root/services/tts.js');
+    const { videoService } = await import('#root/services/video.js');
 
-    const mockVideoJob = {
-      id: 'video-job-123',
-      userId: BigInt(123456),
-      childName: 'Алиса',
-      phoneNumber: '+1234567890',
-      status: 'PROCESSING',
-      user: {
-        id: BigInt(123456),
-        firstName: 'Test',
-      },
+    const mockAsset = {
+      id: 'asset-123',
+      name: 'алиса',
+      status: 'PENDING',
+      userRequests: [
+        { userId: BigInt(123456), status: 'PENDING', user: { id: BigInt(123456), firstName: 'User1' } },
+        { userId: BigInt(789012), status: 'PENDING', user: { id: BigInt(789012), firstName: 'User2' } },
+      ],
     };
 
-    vi.mocked(prisma.videoJob.findUnique).mockResolvedValue(mockVideoJob as any);
-    vi.mocked(prisma.videoJob.update).mockResolvedValue(mockVideoJob as any);
+    vi.mocked(prisma.videoAsset.update).mockResolvedValue(mockAsset as any);
+    vi.mocked(prisma.videoAsset.findUnique).mockResolvedValue(mockAsset as any);
+    vi.mocked(prisma.userRequest.updateMany).mockResolvedValue({ count: 2 } as any);
 
     const processor = createVideoGenerationProcessor(botApi as Api);
     await processor(mockJob as Job<VideoGenerationJobData>);
 
-    expect(prisma.videoJob.update).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
-      data: { status: 'PROCESSING' },
+    // Check that asset status was updated to GENERATING
+    expect(prisma.videoAsset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-123' },
+      data: { status: 'GENERATING' },
     });
-    expect(prisma.videoJob.findUnique).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
-      include: { user: true },
+
+    // Check that video was generated
+    expect(ttsService.generate).toHaveBeenCalledWith('алиса');
+    expect(videoService.mergeAudioWithVideo).toHaveBeenCalledWith('/path/to/mock/audio.mp3');
+
+    // Check that video was sent to first user and file_id was captured
+    expect(botApi.sendVideo).toHaveBeenCalledWith(
+      123456,
+      expect.objectContaining({ path: '/path/to/mock/video.mp4' }),
+      expect.any(Object),
+    );
+
+    // Check that asset was updated with file_id
+    expect(prisma.videoAsset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-123' },
+      data: { status: 'AVAILABLE', telegramFileId: 'mock-telegram-file-id' },
     });
-    expect(ttsService.generate).toHaveBeenCalledWith('Алиса');
-    expect(botApi.sendAudio).toHaveBeenCalledWith(123456, expect.objectContaining({ path: '/path/to/mock/audio.mp3' }));
-    expect(prisma.videoJob.update).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
+
+    // Check that all subscribers received messages
+    expect(botApi.sendMessage).toHaveBeenCalledTimes(2);
+
+    // Check that all requests were marked as COMPLETED
+    expect(prisma.userRequest.updateMany).toHaveBeenCalledWith({
+      where: { assetId: 'asset-123', status: 'PENDING' },
       data: { status: 'COMPLETED' },
     });
-    expect(botApi.sendMessage).toHaveBeenCalledWith(
-      123456,
-      expect.stringContaining('Алиса'),
-    );
   });
 
-  it('should handle case when VideoJob is not found', async () => {
+  it('should handle case when VideoAsset is not found', async () => {
     const { prisma } = await import('#root/db/client.js');
     const { createVideoGenerationProcessor } = await import(
       '#root/queue/processors/video-generation.js'
     );
 
-    vi.mocked(prisma.videoJob.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.videoAsset.findUnique).mockResolvedValue(null);
 
     const processor = createVideoGenerationProcessor(botApi as Api);
 
     await expect(processor(mockJob as Job<VideoGenerationJobData>)).rejects.toThrow(
-      'VideoJob video-job-123 not found in database',
+      'VideoAsset asset-123 not found in database',
     );
 
-    expect(prisma.videoJob.update).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
-      data: { status: 'PROCESSING' },
+    expect(prisma.videoAsset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-123' },
+      data: { status: 'GENERATING' },
     });
-    expect(prisma.videoJob.update).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
+    expect(prisma.videoAsset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-123' },
       data: { status: 'FAILED' },
     });
   });
@@ -147,7 +172,7 @@ describe('createVideoGenerationProcessor', () => {
     );
 
     const dbError = new Error('Database connection failed');
-    vi.mocked(prisma.videoJob.findUnique).mockRejectedValue(dbError);
+    vi.mocked(prisma.videoAsset.findUnique).mockRejectedValue(dbError);
 
     const processor = createVideoGenerationProcessor(botApi as Api);
 
@@ -155,37 +180,38 @@ describe('createVideoGenerationProcessor', () => {
       'Database connection failed',
     );
 
-    expect(prisma.videoJob.update).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
+    expect(prisma.videoAsset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-123' },
       data: { status: 'FAILED' },
     });
   });
 
-  it('should handle sendAudio errors and update status to FAILED', async () => {
+  it('should handle sendVideo errors and update status to FAILED', async () => {
     const { prisma } = await import('#root/db/client.js');
     const { createVideoGenerationProcessor } = await import(
       '#root/queue/processors/video-generation.js'
     );
 
-    const mockVideoJob = {
-      id: 'video-job-123',
-      userId: BigInt(123456),
-      childName: 'Алиса',
-      user: { id: BigInt(123456) },
+    const mockAsset = {
+      id: 'asset-123',
+      name: 'алиса',
+      userRequests: [
+        { userId: BigInt(123456), status: 'PENDING', user: { id: BigInt(123456) } },
+      ],
     };
 
-    vi.mocked(prisma.videoJob.findUnique).mockResolvedValue(mockVideoJob as any);
-    vi.mocked(prisma.videoJob.update).mockResolvedValue(mockVideoJob as any);
+    vi.mocked(prisma.videoAsset.findUnique).mockResolvedValue(mockAsset as any);
+    vi.mocked(prisma.videoAsset.update).mockResolvedValue(mockAsset as any);
 
-    const sendAudioError = new Error('Failed to send audio');
-    vi.mocked(botApi.sendAudio as Mock).mockRejectedValue(sendAudioError);
+    const sendVideoError = new Error('Failed to send video');
+    vi.mocked(botApi.sendVideo as Mock).mockRejectedValue(sendVideoError);
 
     const processor = createVideoGenerationProcessor(botApi as Api);
 
-    await expect(processor(mockJob as Job<VideoGenerationJobData>)).rejects.toThrow('Failed to send audio');
+    await expect(processor(mockJob as Job<VideoGenerationJobData>)).rejects.toThrow('Failed to send video');
 
-    expect(prisma.videoJob.update).toHaveBeenCalledWith({
-      where: { id: 'video-job-123' },
+    expect(prisma.videoAsset.update).toHaveBeenCalledWith({
+      where: { id: 'asset-123' },
       data: { status: 'FAILED' },
     });
   });
@@ -200,11 +226,11 @@ describe('createVideoGenerationProcessor', () => {
     const dbError = new Error('Database connection failed');
     const updateError = new Error('Failed to update status');
 
-    vi.mocked(prisma.videoJob.update)
+    vi.mocked(prisma.videoAsset.update)
       .mockResolvedValueOnce({} as any)
       .mockRejectedValueOnce(updateError);
 
-    vi.mocked(prisma.videoJob.findUnique).mockRejectedValue(dbError);
+    vi.mocked(prisma.videoAsset.findUnique).mockRejectedValue(dbError);
 
     const processor = createVideoGenerationProcessor(botApi as Api);
 
@@ -215,9 +241,9 @@ describe('createVideoGenerationProcessor', () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
         error: updateError,
-        jobId: 'video-job-123',
+        assetId: 'asset-123',
       }),
-      expect.stringContaining('Failed to update job video-job-123 status to FAILED'),
+      expect.stringContaining('Failed to update status'),
     );
   });
 });

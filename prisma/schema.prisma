@@ -11,12 +11,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enum for the status of a video generation job
-enum JobStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
+// Enum for the status of video asset generation
+enum AssetStatus {
+  PENDING    // Waiting for generation
+  GENERATING // Currently being generated
+  AVAILABLE  // Generated and ready to use
+  FAILED     // Generation failed
+}
+
+// Enum for the status of a user request
+enum RequestStatus {
+  PENDING   // Waiting for video delivery
+  COMPLETED // Video delivered successfully
+  FAILED    // Delivery failed
 }
 
 // Model for a Telegram User
@@ -28,27 +35,43 @@ model User {
   username    String?
   phoneNumber String?
 
-  jobs      VideoJob[]
+  requests UserRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-// Model for a video generation job
-model VideoJob {
-  id                 String     @id @default(cuid())
-  childName          String
-  phoneNumber        String
-  status             JobStatus  @default(PENDING)
-  generatedVideoPath String?
-  tgFileId           String?
+// Model for a unique video asset (one per child name)
+model VideoAsset {
+  id             String      @id @default(cuid())
+  name           String      @unique // Normalized child name (lowercase)
+  status         AssetStatus @default(PENDING)
+  telegramFileId String?     // Cached Telegram file_id for instant delivery
 
-  user    User   @relation(fields: [userId], references: [id])
-  userId  BigInt
+  // Relation to user requests
+  userRequests UserRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([status])
+  @@index([name, status])
+}
+
+// Model for a user's request to receive a video
+model UserRequest {
+  id     String        @id @default(cuid())
+  status RequestStatus @default(PENDING)
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId BigInt
+
+  // Relation to the video asset
+  asset   VideoAsset @relation(fields: [assetId], references: [id])
+  assetId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([userId, status])
+  @@index([assetId, status])
 }

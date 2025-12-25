@@ -2,7 +2,7 @@ import { config } from '#root/config.js';
 import { Queue } from 'bullmq';
 
 export interface VideoGenerationJobData {
-  jobId: string;
+  assetId: string;
 }
 
 const connection = {
