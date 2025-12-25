@@ -40,6 +40,11 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
       - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
+      - SOURCE_VIDEO_PATH=${SOURCE_VIDEO_PATH:-./assets/source-video.mp4}
+      - AUDIO_INSERT_TIMECODE=${AUDIO_INSERT_TIMECODE:-1:00:28:21}
+    volumes:
+      - ./assets:/usr/src/app/assets:ro
+      - ./temp:/usr/src/app/temp
     command: sh -c "npx prisma migrate deploy && npm run start:prod"
 
   worker:
@@ -57,6 +62,11 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
       - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
+      - SOURCE_VIDEO_PATH=${SOURCE_VIDEO_PATH:-./assets/source-video.mp4}
+      - AUDIO_INSERT_TIMECODE=${AUDIO_INSERT_TIMECODE:-1:00:28:21}
+    volumes:
+      - ./assets:/usr/src/app/assets:ro
+      - ./temp:/usr/src/app/temp
     command: npm run worker:prod
 
 volumes:

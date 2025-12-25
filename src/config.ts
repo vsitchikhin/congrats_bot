@@ -15,6 +15,9 @@ const baseConfigSchema = v.object({
   elevenlabsApiKey: v.string(), // Required API Key
   elevenlabsVoiceId: v.string(), // Required Voice ID
   elevenlabsApiSettings: v.optional(v.pipe(v.string(), v.transform(JSON.parse), v.object({})), '{}'), // Optional voice settings as JSON string
+  // Video Processing Configuration
+  sourceVideoPath: v.string(), // Path to the source video template file
+  audioInsertTimecode: v.optional(v.string(), '1:00:28:21'), // Timecode where audio should be inserted (format: H:MM:SS:FF)
 });
 
 const configSchema = v.variant('botMode', [

@@ -4,6 +4,7 @@ import type { Bot } from 'grammy';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
 import { ttsService } from '#root/services/tts.js';
+import { videoService } from '#root/services/video.js';
 import { InlineKeyboard, InputFile } from 'grammy';
 
 /**
@@ -39,22 +40,20 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
       // 3. Generate audio using TTS service
       const audioPath = await ttsService.generate(videoJob.childName);
 
-      // 4. Send the generated audio file to the user
-      await botApi.sendAudio(
+      // 4. Generate video using video service
+      const videoPath = await videoService.mergeAudioWithVideo(audioPath);
+
+      // 5. Send video to user
+      await botApi.sendVideo(
         // @ts-expect-error bigint to number conversion
         Number.parseInt(videoJob.userId),
-        new InputFile(audioPath),
+        new InputFile(videoPath),
+        {
+          caption: 'Вот ваше персональное новогоднее поздравление! 🎉',
+        },
       );
 
-      // 5. TODO (Task 4.2): Generate video using video service
-      // const videoPath = await videoService.merge(audioPath);
-
-      // 6. TODO (Task 5.1): Send video to user
-      // await botApi.sendVideo(videoJob.userId, new InputFile(videoPath), {
-      //   caption: 'Here is your personalized New Year greeting! 🎉',
-      // });
-
-      // 7. Update job status to COMPLETED
+      // 6. Update job status to COMPLETED
       await prisma.videoJob.update({
         where: { id: jobId },
         data: { status: 'COMPLETED' },
@@ -66,11 +65,11 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
       const keyboard = new InlineKeyboard()
         .text('🎄 Заказать еще одно видео', 'order_another_video');
 
-      // Temporary: Send a text message to notify completion and show audio path
+      // Send a text message to notify completion
       await botApi.sendMessage(
         // @ts-expect-error bigint to number conversion
         Number.parseInt(videoJob.userId),
-        `Your audio greeting for ${videoJob.childName} is ready! (Audio generated at: ${audioPath})`,
+        `Ваше видеопоздравление для ${videoJob.childName} готово! 🎊`,
         { reply_markup: keyboard },
       );
     }
