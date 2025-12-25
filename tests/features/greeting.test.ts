@@ -287,6 +287,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
 
     // Mock conversation object
     conversation = {
+      waitFor: vi.fn(),
       wait: vi.fn(),
       update: vi.fn(),
       log: vi.fn(),
@@ -328,7 +329,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     vi.mocked(queue.add).mockResolvedValue({} as any);
 
     // Simulate conversation steps
-    conversation.wait
+    conversation.waitFor
       .mockResolvedValueOnce({
         ...ctx,
         message: { contact: { phone_number: '+1234567890' } },
@@ -366,7 +367,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     vi.mocked(prisma.$transaction).mockRejectedValue(dbError);
 
     // Simulate conversation steps
-    conversation.wait
+    conversation.waitFor
       .mockResolvedValueOnce({
         ...ctx,
         message: { contact: { phone_number: '+1234567890' } },
@@ -418,7 +419,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     vi.mocked(queue.add).mockRejectedValue(queueError);
 
     // Simulate conversation steps
-    conversation.wait
+    conversation.waitFor
       .mockResolvedValueOnce({
         ...ctx,
         message: { contact: { phone_number: '+1234567890' } },
