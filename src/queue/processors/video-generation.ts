@@ -3,6 +3,8 @@ import type { Job } from 'bullmq';
 import type { Bot } from 'grammy';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
+import { ttsService } from '#root/services/tts.js';
+import { InputFile } from 'grammy';
 
 /**
  * Creates a processor function for the video-generation queue.
@@ -34,14 +36,18 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
         throw new Error(`VideoJob ${jobId} not found in database`);
       }
 
-      // 3. TODO (Task 4.1): Generate audio using TTS service
-      // const audioPath = await ttsService.generate(videoJob.childName);
+      // 3. Generate audio using TTS service
+      const audioPath = await ttsService.generate(videoJob.childName);
 
-      // 4. TODO (Task 4.2): Generate video using video service
+      // 4. Send the generated audio file to the user
+      await botApi.sendAudio(
+        // @ts-expect-error bigint to number conversion
+        Number.parseInt(videoJob.userId),
+        new InputFile(audioPath),
+      );
+
+      // 5. TODO (Task 4.2): Generate video using video service
       // const videoPath = await videoService.merge(audioPath);
-
-      // 5. Simulate video generation work (will be replaced by actual services)
-      await new Promise(resolve => setTimeout(resolve, 5000)); // 5-second delay
 
       // 6. TODO (Task 5.1): Send video to user
       // await botApi.sendVideo(videoJob.userId, new InputFile(videoPath), {
@@ -56,11 +62,11 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
 
       logger.info(`Job ${jobId} completed successfully!`);
 
-      // Temporary: Send a text message to notify completion (will be replaced by actual video)
+      // Temporary: Send a text message to notify completion and show audio path
       await botApi.sendMessage(
         // @ts-expect-error bigint to number conversion
         Number.parseInt(videoJob.userId),
-        `Your video greeting for ${videoJob.childName} is ready! (This is a placeholder - actual video will be sent in future tasks)`,
+        `Your audio greeting for ${videoJob.childName} is ready! (Audio generated at: ${audioPath})`,
       );
     }
     catch (error) {

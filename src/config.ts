@@ -11,6 +11,10 @@ const baseConfigSchema = v.object({
   botToken: v.pipe(v.string(), v.regex(/^\d+:[\w-]+$/, 'Invalid token')),
   botAllowedUpdates: v.optional(v.pipe(v.string(), v.transform(JSON.parse), v.array(v.picklist(API_CONSTANTS.ALL_UPDATE_TYPES))), '[]'),
   botAdmins: v.optional(v.pipe(v.string(), v.transform(JSON.parse), v.array(v.number())), '[]'),
+  // ElevenLabs TTS Configuration
+  elevenlabsApiKey: v.string(), // Required API Key
+  elevenlabsVoiceId: v.string(), // Required Voice ID
+  elevenlabsApiSettings: v.optional(v.pipe(v.string(), v.transform(JSON.parse), v.object({})), '{}'), // Optional voice settings as JSON string
 });
 
 const configSchema = v.variant('botMode', [
@@ -41,7 +45,7 @@ const configSchema = v.variant('botMode', [
       ...input,
       isDebug: input.debug,
       isWebhookMode: true as const,
-      isPollingMode: false as const,
+      isPollingMode: false as const, // Fix: This should be false, consistent with polling config.
     })),
   ),
 ]);

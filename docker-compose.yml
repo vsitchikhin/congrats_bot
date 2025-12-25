@@ -9,7 +9,7 @@ services:
     image: postgres:16-alpine
     container_name: new_year_bot_postgres
     ports:
-      - '5432:5432'
+      - '5433:5432' # External port changed to avoid conflict with local PostgreSQL
     environment:
       - POSTGRES_DB=new_year_bot
       - POSTGRES_USER=postgres
@@ -39,6 +39,9 @@ services:
       - REDIS_PORT=6379
       - BOT_TOKEN=${BOT_TOKEN} # This is read from your .env file
       - BOT_MODE=polling
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
+      - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
     command: sh -c "npx prisma migrate deploy && npm run start:prod"
 
   worker:
@@ -52,6 +55,10 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - BOT_TOKEN=${BOT_TOKEN} # This is read from your .env file
+      - BOT_MODE=polling # Required by config validation (worker doesn't use this value)
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
+      - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
     command: npm run worker:prod
 
 volumes:

@@ -5,7 +5,10 @@
   "private": true,
   "description": "Telegram bot starter template",
   "imports": {
-    "#root/*": "./build/src/*"
+    "#root/*": {
+      "types": "./src/*",
+      "default": "./build/src/*"
+    }
   },
   "author": "deptyped <deptyped@gmail.com>",
   "license": "MIT",

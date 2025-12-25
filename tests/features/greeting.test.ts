@@ -6,7 +6,6 @@ import type { Mock } from 'vitest';
 import { greetingFeature } from '#root/bot/features/greeting.js';
 import { conversations } from '@grammyjs/conversations';
 import { Bot } from 'grammy';
-import { pino } from 'pino';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock Prisma client
@@ -32,23 +31,18 @@ vi.mock('#root/queue/definitions/video-generation.js', () => ({
   getVideoGenerationQueue: vi.fn(() => mockQueue),
 }));
 
-// Mock pino logger
-vi.mock('pino', () => {
-  const mockPino = {
-    debug: vi.fn(),
+// Mock logger
+vi.mock('#root/logger.js', () => ({
+  logger: {
     info: vi.fn(),
-    warn: vi.fn(),
     error: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
     fatal: vi.fn(),
     trace: vi.fn(),
     silent: vi.fn(),
-    child: vi.fn(() => mockPino),
-    level: 'info',
-    version: '8.0.0',
-    on: vi.fn(),
-  };
-  return { pino: vi.fn(() => mockPino), default: vi.fn(() => mockPino) };
-});
+  },
+}));
 
 vi.mock('#root/config.js', () => ({
   config: {
@@ -64,10 +58,6 @@ vi.mock('#root/config.js', () => ({
     isDebug: false,
     isWebhookMode: false,
   },
-}));
-
-vi.mock('#root/logger.js', () => ({
-  logger: pino(),
 }));
 
 const botInfo: UserFromGetMe = {
