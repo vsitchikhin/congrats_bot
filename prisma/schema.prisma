@@ -90,8 +90,8 @@ model SystemAsset {
 
 // Model for storing grammY sessions (for @grammyjs/storage-prisma)
 model Session {
-  id    String @id
+  key   String @id
   value String
 
-  @@index([id])
+  @@index([key])
 }
