@@ -9,14 +9,12 @@ import { errorHandler } from '#root/bot/handlers/error.js';
 import { i18n } from '#root/bot/i18n.js';
 // import { session } from '#root/bot/middlewares/session.js';
 import { updateLogger } from '#root/bot/middlewares/update-logger.js';
-import { prisma } from '#root/db/client.js';
 import { autoChatAction } from '@grammyjs/auto-chat-action';
 import { conversations } from '@grammyjs/conversations';
 import { hydrate } from '@grammyjs/hydrate';
 import { hydrateReply, parseMode } from '@grammyjs/parse-mode';
 import { sequentialize } from '@grammyjs/runner';
-import { PrismaAdapter } from '@grammyjs/storage-prisma';
-import { session, Bot as TelegramBot } from 'grammy';
+import { MemorySessionStorage, session, Bot as TelegramBot } from 'grammy';
 
 interface Dependencies {
   config: Config;
@@ -58,8 +56,9 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
   protectedBot.use(hydrate());
   protectedBot.use(session({
     initial: () => ({ locale: 'ru' }),
-    // eslint-disable-next-line ts/no-unsafe-argument
-    storage: new PrismaAdapter(prisma.session as any),
+    storage: new MemorySessionStorage(),
+    // TODO: PrismaAdapter doesn't work with conversations - need to investigate
+    // storage: new PrismaAdapter(prisma.session as any),
   }));
   protectedBot.use(i18n);
   protectedBot.use(conversations());
