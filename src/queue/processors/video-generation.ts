@@ -144,36 +144,86 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
     }
     catch (error) {
       // Add attempt information for better debugging
-      const attemptInfo = (job.attemptsMade != null && job.attemptsMade > 0)
-        ? `(attempt ${job.attemptsMade}/${job.opts.attempts ?? 1})`
-        : '';
+      const currentAttempt = (job.attemptsMade ?? 0) + 1;
+      const maxAttempts = job.opts.attempts ?? 1;
+      const attemptInfo = `(attempt ${currentAttempt}/${maxAttempts})`;
 
       logger.error(
         { error, assetId, attemptInfo },
         `❌ VideoAsset ${assetId} generation failed ${attemptInfo}`,
       );
 
-      // Mark asset and all pending requests as FAILED
-      try {
-        await prisma.videoAsset.update({
-          where: { id: assetId },
-          data: { status: 'FAILED' },
-        });
+      // Only mark as FAILED if this is the final retry attempt
+      // Otherwise, let BullMQ retry with PENDING status intact
+      const isFinalAttempt = currentAttempt >= maxAttempts;
 
-        await prisma.userRequest.updateMany({
-          where: {
-            assetId,
-            status: 'PENDING',
-          },
-          data: {
-            status: 'FAILED',
-          },
-        });
+      if (isFinalAttempt) {
+        logger.warn({ assetId }, 'Final retry attempt failed, marking as FAILED');
 
-        logger.info({ assetId }, 'Marked asset and all pending requests as FAILED');
+        try {
+          await prisma.videoAsset.update({
+            where: { id: assetId },
+            data: { status: 'FAILED' },
+          });
+
+          await prisma.userRequest.updateMany({
+            where: {
+              assetId,
+              status: 'PENDING',
+            },
+            data: {
+              status: 'FAILED',
+            },
+          });
+
+          logger.info({ assetId }, 'Marked asset and all pending requests as FAILED');
+
+          // Notify all affected users about the failure
+          // Re-fetch asset with failed user requests to get updated data
+          const failedAsset = await prisma.videoAsset.findUnique({
+            where: { id: assetId },
+            include: {
+              userRequests: {
+                where: { status: 'FAILED' },
+              },
+            },
+          });
+
+          if (failedAsset && failedAsset.userRequests.length > 0) {
+            logger.info({ assetId, usersCount: failedAsset.userRequests.length }, 'Sending failure notifications to users');
+
+            for (const userRequest of failedAsset.userRequests) {
+              try {
+                const keyboard = new InlineKeyboard()
+                  .text('🔄 Попробовать еще раз', `retry_video_${assetId}`);
+
+                await botApi.sendMessage(
+                  Number.parseInt(userRequest.userId.toString()),
+                  `Упс! Что-то пошло не так при создании видео для <b>${failedAsset.name}</b>. 😔\n\nНе переживайте, вы можете попробовать еще раз!`,
+                  {
+                    parse_mode: 'HTML',
+                    reply_markup: keyboard,
+                  },
+                );
+
+                logger.info({ userId: userRequest.userId, assetId }, '📨 Sent failure notification with retry button');
+              }
+              catch (notifyError) {
+                // Don't fail the whole process if we can't notify one user
+                logger.error(
+                  { error: notifyError, userId: userRequest.userId, assetId },
+                  'Failed to send failure notification to user',
+                );
+              }
+            }
+          }
+        }
+        catch (updateError) {
+          logger.error({ error: updateError, assetId }, 'Failed to update status to FAILED');
+        }
       }
-      catch (updateError) {
-        logger.error({ error: updateError, assetId }, 'Failed to update status to FAILED');
+      else {
+        logger.info({ assetId, nextAttempt: currentAttempt + 1 }, 'Will retry - keeping PENDING status');
       }
 
       // Re-throw error for BullMQ retry logic
