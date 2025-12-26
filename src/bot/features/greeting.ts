@@ -1,9 +1,11 @@
 import type { BaseContext, Context } from '#root/bot/context.js';
 import type { Conversation } from '@grammyjs/conversations';
 import type { Prisma } from '@prisma/client';
+import { config } from '#root/config.js';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
 import { getVideoGenerationQueue } from '#root/queue/definitions/video-generation.js';
+import { sendCoupons } from '#root/services/coupons.js';
 import { createConversation } from '@grammyjs/conversations';
 import { Composer, InlineKeyboard, Keyboard } from 'grammy';
 
@@ -371,6 +373,10 @@ export async function greetingConversation(
       // Video is already available - send it immediately
       logger.info({ userId: ctx.from!.id, conversationId, childName }, '📤 Sending cached video');
       await ctx.replyWithVideo(result.fileId!);
+
+      // Send coupons after video
+      await sendCoupons(ctx.api, ctx.from!.id, config.sendCoupons);
+
       await ctx.reply('✅ Видео готово! Можете заказать еще одно поздравление.', {
         reply_markup: new InlineKeyboard().text('🎬 Заказать еще одно видео', 'order_another_video'),
       });
@@ -524,6 +530,10 @@ composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx
       // Video is already available - send it immediately
       logger.info({ userId: ctx.from.id, childName }, '📤 Sending cached video (reorder)');
       await ctx.replyWithVideo(result.fileId!);
+
+      // Send coupons after video
+      await sendCoupons(ctx.api, ctx.from.id, config.sendCoupons);
+
       await ctx.reply('✅ Видео готово! Можете заказать еще одно поздравление.', {
         reply_markup: new InlineKeyboard().text('🎬 Заказать еще одно видео', 'order_another_video'),
       });

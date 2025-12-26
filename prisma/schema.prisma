@@ -75,3 +75,15 @@ model UserRequest {
   @@index([userId, status])
   @@index([assetId, status])
 }
+
+// Model for system-wide assets (coupons, etc.)
+model SystemAsset {
+  id             String  @id @default(cuid())
+  key            String  @unique // e.g., 'coupon1', 'coupon2'
+  telegramFileId String? // Cached Telegram file_id
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}

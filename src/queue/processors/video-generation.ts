@@ -1,82 +1,13 @@
 import type { VideoGenerationJobData } from '#root/queue/definitions/video-generation.js';
 import type { Job } from 'bullmq';
 import type { Bot } from 'grammy';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { config } from '#root/config.js';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
+import { sendCoupons } from '#root/services/coupons.js';
 import { ttsService } from '#root/services/tts.js';
 import { videoService } from '#root/services/video.js';
 import { InlineKeyboard, InputFile } from 'grammy';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-/**
- * Helper function to send coupons to a user.
- * On first send, uploads the images and caches their file_id in the database.
- * On subsequent sends, uses the cached file_id for instant delivery.
- *
- * @param botApi The Bot API instance
- * @param userId The user's chat ID
- * @param enabled Whether to send coupons (controlled by config)
- */
-async function sendCoupons(botApi: Bot['api'], userId: number, enabled: boolean) {
-  if (!enabled) {
-    logger.info('Coupons disabled in config, skipping');
-    return;
-  }
-
-  const couponKeys = ['coupon1', 'coupon2'];
-  const assetsDir = path.resolve(__dirname, '../../../../assets');
-
-  for (const key of couponKeys) {
-    // Check if we have a cached file_id
-    const systemAsset = await prisma.systemAsset.findUnique({
-      where: { key },
-    });
-
-    let fileId: string;
-
-    if (systemAsset?.telegramFileId !== undefined && systemAsset.telegramFileId !== null && systemAsset.telegramFileId !== '') {
-      // Use cached file_id
-      fileId = systemAsset.telegramFileId;
-      logger.info({ key, fileId }, 'Using cached coupon file_id');
-    }
-    else {
-      // Upload the file for the first time
-      const couponPath = path.join(assetsDir, `${key}.jpeg`);
-      logger.info({ key, couponPath }, 'Uploading coupon for the first time');
-
-      const message = await botApi.sendPhoto(
-        userId,
-        new InputFile(couponPath),
-      );
-
-      fileId = message.photo[message.photo.length - 1].file_id;
-
-      // Save file_id to database
-      if (systemAsset) {
-        await prisma.systemAsset.update({
-          where: { key },
-          data: { telegramFileId: fileId },
-        });
-      }
-      else {
-        await prisma.systemAsset.create({
-          data: { key, telegramFileId: fileId },
-        });
-      }
-
-      logger.info({ key, fileId }, 'Coupon file_id cached in database');
-      continue; // Already sent during upload
-    }
-
-    // Send using cached file_id
-    await botApi.sendPhoto(userId, fileId);
-  }
-}
 
 /**
  * Creates a processor function for the video-generation queue.

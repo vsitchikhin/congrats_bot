@@ -45,10 +45,11 @@ services:
       - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
       - SOURCE_VIDEO_PATH=${SOURCE_VIDEO_PATH:-./assets/source-video.mp4}
       - AUDIO_INSERT_TIMECODE=${AUDIO_INSERT_TIMECODE:-1:00:28:21}
+      - SEND_COUPONS=${SEND_COUPONS:-true}
     volumes:
       - ./assets:/usr/src/app/assets:ro
       - ./temp:/usr/src/app/temp
-    command: sh -c "npx prisma migrate deploy && npm run start:prod"
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run start:prod"
 
   worker:
     build: .
@@ -67,10 +68,11 @@ services:
       - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
       - SOURCE_VIDEO_PATH=${SOURCE_VIDEO_PATH:-./assets/source-video.mp4}
       - AUDIO_INSERT_TIMECODE=${AUDIO_INSERT_TIMECODE:-1:00:28:21}
+      - SEND_COUPONS=${SEND_COUPONS:-true}
     volumes:
       - ./assets:/usr/src/app/assets:ro
       - ./temp:/usr/src/app/temp
-    command: npm run worker:prod
+    command: sh -c "npx prisma generate && npm run worker:prod"
 
 volumes:
   postgres-data:
