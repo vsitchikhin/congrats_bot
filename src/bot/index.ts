@@ -1,4 +1,4 @@
-import type { Context, SessionData } from '#root/bot/context.js';
+import type { Context } from '#root/bot/context.js';
 import type { Config } from '#root/config.js';
 import type { Logger } from '#root/logger.js';
 import type { BotConfig } from 'grammy';
@@ -7,7 +7,7 @@ import { greetingFeature } from '#root/bot/features/greeting.js';
 import { unhandledFeature } from '#root/bot/features/unhandled.js';
 import { errorHandler } from '#root/bot/handlers/error.js';
 import { i18n } from '#root/bot/i18n.js';
-import { session } from '#root/bot/middlewares/session.js';
+// import { session } from '#root/bot/middlewares/session.js';
 import { updateLogger } from '#root/bot/middlewares/update-logger.js';
 import { prisma } from '#root/db/client.js';
 import { autoChatAction } from '@grammyjs/auto-chat-action';
@@ -16,7 +16,7 @@ import { hydrate } from '@grammyjs/hydrate';
 import { hydrateReply, parseMode } from '@grammyjs/parse-mode';
 import { sequentialize } from '@grammyjs/runner';
 import { PrismaAdapter } from '@grammyjs/storage-prisma';
-import { Bot as TelegramBot } from 'grammy';
+import { session, Bot as TelegramBot } from 'grammy';
 
 interface Dependencies {
   config: Config;
@@ -57,9 +57,9 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
   protectedBot.use(hydrateReply);
   protectedBot.use(hydrate());
   protectedBot.use(session({
-    getSessionKey,
+    initial: () => ({ locale: 'ru' }),
     // eslint-disable-next-line ts/no-unsafe-argument
-    storage: new PrismaAdapter<SessionData>(prisma.session as any),
+    storage: new PrismaAdapter(prisma.session as any),
   }));
   protectedBot.use(i18n);
   protectedBot.use(conversations());
