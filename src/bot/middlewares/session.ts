@@ -8,8 +8,10 @@ export function session(options: Options): Middleware<Context> {
   return createSession({
     getSessionKey: options.getSessionKey,
     storage: options.storage,
-    initial: (): Partial<SessionData> => ({
+    initial: (): SessionData => ({
       locale: 'ru',
+      orderingFlow: undefined,
+      isReordering: false,
     }),
   });
 }
