@@ -45,8 +45,18 @@ export async function generate(childName: string): Promise<string> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      logger.error({ status: response.status, errorText }, 'ElevenLabs API error');
-      throw new Error(`ElevenLabs API error: ${response.status} - ${errorText}`);
+      const errorInfo = {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        isRetryable: [429, 500, 503].includes(response.status),
+      };
+
+      logger.error(errorInfo, 'ElevenLabs API error');
+
+      throw new Error(
+        `ElevenLabs API error: ${response.status} ${response.statusText} - ${errorText}`,
+      );
     }
 
     const arrayBuffer = await response.arrayBuffer();
@@ -61,7 +71,20 @@ export async function generate(childName: string): Promise<string> {
     return filePath;
   }
   catch (error) {
-    logger.error({ error }, 'Failed to generate TTS audio');
+    // Better error logging with type checking
+    if (error instanceof Error) {
+      logger.error(
+        {
+          error: error.message,
+          stack: error.stack,
+          name: error.name,
+        },
+        'Failed to generate TTS audio',
+      );
+    }
+    else {
+      logger.error({ error }, 'Failed to generate TTS audio (unknown error type)');
+    }
     throw error;
   }
 }

@@ -1,5 +1,6 @@
 import type { BaseContext, Context } from '#root/bot/context.js';
 import type { Conversation } from '@grammyjs/conversations';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
 import { getVideoGenerationQueue } from '#root/queue/definitions/video-generation.js';
@@ -39,7 +40,7 @@ async function handleVideoRequest(
 ): Promise<VideoRequestResult> {
   const normalizedName = normalizeChildName(childName);
 
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // 1. Find existing VideoAsset for this name
     let asset = await tx.videoAsset.findUnique({
       where: { name: normalizedName },
@@ -76,7 +77,7 @@ async function handleVideoRequest(
         });
 
         return {
-          type: 'send_cached',
+          type: 'send_cached' as const,
           fileId: asset.telegramFileId,
           assetName: asset.name,
         };
@@ -93,7 +94,7 @@ async function handleVideoRequest(
           },
         });
 
-        return { type: 'subscribed' };
+        return { type: 'subscribed' as const };
       }
       else if (asset.status === 'FAILED' || (asset.status === 'AVAILABLE' && isCacheExpired(asset.createdAt))) {
         // Video generation failed or cache expired - regenerate
@@ -123,11 +124,11 @@ async function handleVideoRequest(
     });
 
     if (shouldGenerateVideo) {
-      return { type: 'generate', assetId: asset.id };
+      return { type: 'generate' as const, assetId: asset.id };
     }
 
     // This shouldn't happen, but just in case
-    return { type: 'subscribed' };
+    return { type: 'subscribed' as const };
   }, {
     isolationLevel: 'Serializable', // Prevent race conditions
   });
@@ -548,6 +549,79 @@ composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx
   catch (error) {
     logger.error({ userId: ctx.from.id, error }, '❌ Failed to process reorder video request');
     await ctx.reply('Произошла ошибка при создании заказа. Пожалуйста, попробуйте позже.');
+  }
+});
+
+// Handle retry button click after video generation failure
+composer.callbackQuery(/^retry_video_(.+)$/, async (ctx) => {
+  await ctx.answerCallbackQuery();
+
+  const assetId = ctx.match[1];
+
+  try {
+    logger.info({ userId: ctx.from.id, assetId }, 'User clicked retry button');
+
+    // Check that asset exists and has FAILED status
+    const asset = await prisma.videoAsset.findUnique({
+      where: { id: assetId },
+    });
+
+    if (!asset) {
+      await ctx.reply('❌ Ошибка: видео не найдено. Попробуйте создать новое.');
+      return;
+    }
+
+    if (asset.status !== 'FAILED') {
+      if (asset.status === 'AVAILABLE') {
+        await ctx.reply('✅ Видео уже готово! Сейчас отправлю...');
+        // Video is available - send it
+        if (asset.telegramFileId != null) {
+          await ctx.replyWithVideo(asset.telegramFileId);
+          await ctx.reply('Можете заказать еще одно поздравление.', {
+            reply_markup: new InlineKeyboard().text('🎬 Заказать еще одно видео', 'order_another_video'),
+          });
+        }
+        return;
+      }
+      if (asset.status === 'GENERATING' || asset.status === 'PENDING') {
+        await ctx.reply('⏳ Видео уже генерируется. Пожалуйста, подождите.');
+        return;
+      }
+    }
+
+    // Reset status to PENDING for retry
+    await prisma.videoAsset.update({
+      where: { id: assetId },
+      data: { status: 'PENDING' },
+    });
+
+    // Reset status of all related requests
+    await prisma.userRequest.updateMany({
+      where: { assetId, status: 'FAILED' },
+      data: { status: 'PENDING' },
+    });
+
+    // Add task to queue again
+    const queue = getVideoGenerationQueue();
+    await queue.add('generate-video', { assetId });
+
+    await ctx.reply(
+      '✅ Запрос отправлен повторно! Я сообщу вам, когда видео будет готово.',
+      { reply_markup: { remove_keyboard: true } },
+    );
+
+    // Delete message with retry button
+    try {
+      await ctx.deleteMessage();
+    }
+    catch (deleteError) {
+      // Ignore error if message is already deleted
+      logger.debug({ error: deleteError }, 'Could not delete retry message');
+    }
+  }
+  catch (error) {
+    logger.error({ userId: ctx.from.id, assetId, error }, '❌ Failed to retry video generation');
+    await ctx.reply('❌ Произошла ошибка при повторной отправке запроса. Попробуйте позже.');
   }
 });
 
