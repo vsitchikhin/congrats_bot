@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build output
+build/
+dist/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+temp/
+temp-*
+*.tmp
+
+# AI Team workflow (development only)
+ai_team/
+
+# Husky hooks (not needed in container)
+.husky/
+
+# Lint and config files (not needed at runtime)
+.eslintcache
+.stylelintcache
+
+# Documentation and meta files
+*.md
+!README.md
+.dockerignore
+docker-compose.yml
+
+# Data directory
+data/

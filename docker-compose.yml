@@ -1,6 +1,9 @@
 # For this to work, you need a .env file in the root of your project
-# with at least the following variable:
+# with at least the following variables:
 # BOT_TOKEN=123456:ABC-DEF1234567890
+# DATABASE_URL=postgresql://postgres:postgres@postgres:5432/new_year_bot
+#
+# See .env.example for all required variables
 
 services:
   postgres:
@@ -32,11 +35,11 @@ services:
       - postgres
       - redis
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/new_year_bot
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - BOT_TOKEN=${BOT_TOKEN} # This is read from your .env file
-      - BOT_MODE=polling
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - BOT_MODE=${BOT_MODE:-polling}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
       - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
@@ -54,11 +57,11 @@ services:
       - postgres
       - redis
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/new_year_bot
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - BOT_TOKEN=${BOT_TOKEN} # This is read from your .env file
-      - BOT_MODE=polling # Required by config validation (worker doesn't use this value)
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - BOT_MODE=${BOT_MODE:-polling}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
       - ELEVENLABS_API_SETTINGS=${ELEVENLABS_API_SETTINGS}
