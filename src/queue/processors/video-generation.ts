@@ -29,7 +29,7 @@ async function sendCoupons(botApi: Bot['api'], userId: number, enabled: boolean)
   }
 
   const couponKeys = ['coupon1', 'coupon2'];
-  const assetsDir = path.resolve(__dirname, '../../../assets');
+  const assetsDir = path.resolve(__dirname, '../../../../assets');
 
   for (const key of couponKeys) {
     // Check if we have a cached file_id
@@ -152,6 +152,18 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
 
       logger.info({ assetId, fileId }, '✅ Video uploaded to Telegram, got file_id for caching');
 
+      // 5.1. Send coupons and completion message to first user immediately after video
+      const keyboard = new InlineKeyboard()
+        .text('🎄 Заказать еще одно видео', 'order_another_video');
+
+      await sendCoupons(botApi, Number.parseInt(firstUser.userId.toString()), config.sendCoupons);
+
+      await botApi.sendMessage(
+        Number.parseInt(firstUser.userId.toString()),
+        `Ваше видеопоздравление для ${asset.name} готово! 🎊`,
+        { reply_markup: keyboard },
+      );
+
       // 6. Update asset with file_id and mark as AVAILABLE
       await prisma.videoAsset.update({
         where: { id: assetId },
@@ -162,9 +174,6 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
       });
 
       // 7. Send to remaining users using cached file_id (instant delivery!)
-      const keyboard = new InlineKeyboard()
-        .text('🎄 Заказать еще одно видео', 'order_another_video');
-
       for (let i = 1; i < asset.userRequests.length; i++) {
         const userRequest = asset.userRequests[i];
         logger.info({ assetId, userId: userRequest.userId }, `Sending cached video to subscriber ${i + 1}/${asset.userRequests.length}`);
@@ -188,16 +197,6 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
           { reply_markup: keyboard },
         );
       }
-
-      // Send coupons to first user after video
-      await sendCoupons(botApi, Number.parseInt(firstUser.userId.toString()), config.sendCoupons);
-
-      // Send completion message to first user too
-      await botApi.sendMessage(
-        Number.parseInt(firstUser.userId.toString()),
-        `Ваше видеопоздравление для ${asset.name} готово! 🎊`,
-        { reply_markup: keyboard },
-      );
 
       // 8. Mark all UserRequests as COMPLETED
       await prisma.userRequest.updateMany({
