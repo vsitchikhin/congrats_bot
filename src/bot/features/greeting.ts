@@ -136,14 +136,8 @@ async function handleVideoRequest(
   });
 }
 
-// Track users who are ordering without conversation (for repeat orders)
-const orderingWithoutConversation = new Map<number, { step: 'waiting_name' | 'waiting_confirm'; childName?: string }>();
-
-// Track users who are currently in conversation to prevent starting a new one
-const activeConversations = new Set<number>();
-
-// Track users who clicked "Order another video" button to skip welcome message
-const reorderingUsers = new Set<number>();
+// Note: Removed in-memory Sets/Maps (activeConversations, reorderingUsers, orderingWithoutConversation)
+// Now using session storage for all state - this allows the bot to scale horizontally
 
 // Validation constants
 const MIN_NAME_LENGTH = 2;
@@ -184,9 +178,6 @@ export async function greetingConversation(
   const conversationId = Math.random().toString(36).substring(7);
   logger.info({ userId: ctx.from!.id, conversationId }, '🔵 CONVERSATION STARTED');
 
-  // Mark conversation as active
-  activeConversations.add(ctx.from!.id);
-
   // Step 1: Check if user already has phone number in database
   let phoneNumber = '';
 
@@ -201,12 +192,11 @@ export async function greetingConversation(
       phoneNumber = existingUser.phoneNumber;
 
       // Only show welcome message if this is NOT a reorder
-      const isReordering = reorderingUsers.has(ctx.from!.id);
-      if (!isReordering) {
+      if (!ctx.session.isReordering) {
         await ctx.reply('С возвращением! 👋');
       }
       // Clear the reordering flag
-      reorderingUsers.delete(ctx.from!.id);
+      ctx.session.isReordering = false;
     }
   }
   catch (error) {
@@ -298,7 +288,6 @@ export async function greetingConversation(
     if (nameCtx.message?.text === '/cancel') {
       await ctx.reply('❌ Диалог отменён. Введите /start для повтора.');
       logger.info({ userId: ctx.from!.id, conversationId }, '🔴 CONVERSATION CANCELLED');
-      activeConversations.delete(ctx.from!.id);
       return;
     }
 
@@ -405,9 +394,6 @@ export async function greetingConversation(
   }
 
   logger.info({ userId: ctx.from!.id, conversationId }, '🔴 CONVERSATION ENDED');
-
-  // Mark conversation as no longer active
-  activeConversations.delete(ctx.from!.id);
 }
 
 // Register the conversation
@@ -423,8 +409,8 @@ composer.command('start', async (ctx) => {
 composer.callbackQuery('order_another_video', async (ctx) => {
   await ctx.answerCallbackQuery();
 
-  // Check if user already has an active conversation or ordering process
-  if (activeConversations.has(ctx.from.id) || orderingWithoutConversation.has(ctx.from.id)) {
+  // Check if user already has an active ordering process
+  if (ctx.session.orderingFlow) {
     logger.warn({ userId: ctx.from.id }, 'User tried to order another video while order is in progress');
     await ctx.reply('⏳ Пожалуйста, дождитесь завершения текущего заказа.');
     return;
@@ -433,10 +419,10 @@ composer.callbackQuery('order_another_video', async (ctx) => {
   logger.info({ userId: ctx.from.id }, 'User clicked "Order another video" button - using simple flow without conversation');
 
   // Mark user as reordering to skip welcome message if they use /start
-  reorderingUsers.add(ctx.from.id);
+  ctx.session.isReordering = true;
 
   // Start ordering process without conversation
-  orderingWithoutConversation.set(ctx.from.id, { step: 'waiting_name' });
+  ctx.session.orderingFlow = { step: 'waiting_name' };
 
   await ctx.reply('Отлично! Давайте создадим еще одно поздравление.\n\nПожалуйста, введите имя ребенка:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
     parse_mode: 'HTML',
@@ -445,7 +431,7 @@ composer.callbackQuery('order_another_video', async (ctx) => {
 
 // Handle messages for users ordering without conversation
 composer.on('message:text', async (ctx, next) => {
-  const orderState = orderingWithoutConversation.get(ctx.from.id);
+  const orderState = ctx.session.orderingFlow;
 
   // If user is not in ordering process, skip to next handler
   if (!orderState) {
@@ -456,8 +442,8 @@ composer.on('message:text', async (ctx, next) => {
 
   // Handle cancellation
   if (inputText === '/cancel') {
-    orderingWithoutConversation.delete(ctx.from.id);
-    reorderingUsers.delete(ctx.from.id);
+    ctx.session.orderingFlow = undefined;
+    ctx.session.isReordering = false;
     await ctx.reply('❌ Диалог отменён. Чтобы заказать видео, нажмите кнопку "Заказать еще одно видео".');
     return;
   }
@@ -499,12 +485,12 @@ composer.on('message:text', async (ctx, next) => {
 composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx) => {
   await ctx.answerCallbackQuery();
 
-  const orderState = orderingWithoutConversation.get(ctx.from.id);
+  const orderState = ctx.session.orderingFlow;
 
   if (!orderState || orderState.childName === undefined) {
     await ctx.reply('❌ Ошибка: данные заказа не найдены. Попробуйте снова.');
-    orderingWithoutConversation.delete(ctx.from.id);
-    reorderingUsers.delete(ctx.from.id);
+    ctx.session.orderingFlow = undefined;
+    ctx.session.isReordering = false;
     return;
   }
 
@@ -518,8 +504,8 @@ composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx
 
   // User confirmed - process video request
   const childName = orderState.childName;
-  orderingWithoutConversation.delete(ctx.from.id);
-  reorderingUsers.delete(ctx.from.id);
+  ctx.session.orderingFlow = undefined;
+  ctx.session.isReordering = false;
 
   try {
     logger.info({ userId: ctx.from.id, childName }, '🎬 Processing reorder video request...');

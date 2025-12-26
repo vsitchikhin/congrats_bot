@@ -8,6 +8,10 @@ export function session(options: Options): Middleware<Context> {
   return createSession({
     getSessionKey: options.getSessionKey,
     storage: options.storage,
-    initial: () => ({ locale: 'ru' }),
+    initial: (): SessionData => ({
+      locale: 'ru',
+      orderingFlow: undefined,
+      isReordering: false,
+    }),
   });
 }

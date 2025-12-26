@@ -9,12 +9,14 @@ import { errorHandler } from '#root/bot/handlers/error.js';
 import { i18n } from '#root/bot/i18n.js';
 import { session } from '#root/bot/middlewares/session.js';
 import { updateLogger } from '#root/bot/middlewares/update-logger.js';
+import { prisma } from '#root/db/client.js';
 import { autoChatAction } from '@grammyjs/auto-chat-action';
 import { conversations } from '@grammyjs/conversations';
 import { hydrate } from '@grammyjs/hydrate';
 import { hydrateReply, parseMode } from '@grammyjs/parse-mode';
 import { sequentialize } from '@grammyjs/runner';
-import { MemorySessionStorage, Bot as TelegramBot } from 'grammy';
+import { PrismaAdapter } from '@grammyjs/storage-prisma';
+import { Bot as TelegramBot } from 'grammy';
 
 interface Dependencies {
   config: Config;
@@ -47,8 +49,8 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
   // Middlewares
   bot.api.config.use(parseMode('HTML'));
 
-  if (config.isPollingMode)
-    protectedBot.use(sequentialize(getSessionKey));
+  // Always use sequentialize to prevent race conditions for the same user
+  protectedBot.use(sequentialize(getSessionKey));
   if (config.isDebug)
     protectedBot.use(updateLogger());
   protectedBot.use(autoChatAction(bot.api));
@@ -56,7 +58,8 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
   protectedBot.use(hydrate());
   protectedBot.use(session({
     getSessionKey,
-    storage: new MemorySessionStorage<SessionData>(),
+    // eslint-disable-next-line ts/no-unsafe-argument
+    storage: new PrismaAdapter<SessionData>(prisma.session as any),
   }));
   protectedBot.use(i18n);
   protectedBot.use(conversations());

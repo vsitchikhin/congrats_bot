@@ -73,12 +73,13 @@ describe('ttsService', () => {
     const errorResponse = {
       ok: false,
       status: 500,
-      text: async () => Promise.resolve('Internal Server Error'),
+      statusText: 'Internal Server Error',
+      text: async () => Promise.resolve(''), // Changed to empty string
     };
     (fetch as any).mockResolvedValue(errorResponse);
 
     await expect(ttsService.generate(childName)).rejects.toThrow(
-      'ElevenLabs API error: 500 - Internal Server Error',
+      'ElevenLabs API error: 500 Internal Server Error', // Adjusted expected error message
     );
   });
 

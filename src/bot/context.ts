@@ -9,7 +9,13 @@ import type { Context as DefaultContext, SessionFlavor } from 'grammy';
 
 export interface SessionData {
   locale?: string;
-  // field?: string;
+  // Ordering flow state (replaces orderingWithoutConversation Map)
+  orderingFlow?: {
+    step: 'waiting_name' | 'waiting_confirm';
+    childName?: string;
+  };
+  // Flag to skip welcome message on reorder (replaces reorderingUsers Set)
+  isReordering?: boolean;
 }
 
 interface ExtendedContextFlavor {

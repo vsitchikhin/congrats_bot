@@ -16,6 +16,10 @@ vi.mock('#root/db/client.js', () => ({
     userRequest: {
       updateMany: vi.fn(),
     },
+    systemAsset: {
+      findUnique: vi.fn(),
+      create: vi.fn(), // Add mock for systemAsset.create
+    },
   },
 }));
 
@@ -24,6 +28,7 @@ vi.mock('#root/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
+    warn: vi.fn(), // Add warn to the mock
   },
 }));
 
@@ -68,6 +73,7 @@ describe('createVideoGenerationProcessor', () => {
       sendVideo: vi.fn().mockResolvedValue({
         video: { file_id: 'mock-telegram-file-id' },
       }),
+      sendPhoto: vi.fn().mockResolvedValue({ photo: [{ file_id: 'mock-coupon-file-id' }] }), // Add sendPhoto to the mock with photo array
     };
 
     // Mock Job
@@ -75,6 +81,9 @@ describe('createVideoGenerationProcessor', () => {
       id: 'test-job-id',
       data: {
         assetId: 'asset-123',
+      },
+      opts: {
+        attempts: 1, // Add attempts to mock job options
       },
     };
   });
