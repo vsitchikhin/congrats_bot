@@ -28,7 +28,8 @@ vi.mock('#root/logger.js', () => ({
   logger: {
     info: vi.fn(),
     error: vi.fn(),
-    warn: vi.fn(), // Add warn to the mock
+    warn: vi.fn(),
+    debug: vi.fn(),
   },
 }));
 
@@ -44,6 +45,11 @@ vi.mock('#root/services/video.js', () => ({
   videoService: {
     mergeAudioWithVideo: vi.fn().mockResolvedValue('/path/to/mock/video.mp4'),
   },
+}));
+
+// Mock node:fs/promises for unlink
+vi.mock('node:fs/promises', () => ({
+  unlink: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock InputFile to avoid fs operations in test
