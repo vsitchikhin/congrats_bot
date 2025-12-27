@@ -1,6 +1,6 @@
 import type { Buffer } from 'node:buffer';
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '#root/config.js';
 import { logger } from '#root/logger.js';
@@ -69,13 +69,13 @@ async function mergeVideoAndAudio(videoPath: string, audioPath: string, outputPa
  * @returns A promise that resolves to the path of the generated video file.
  */
 async function mergeAudioWithVideo(audioPath: string): Promise<string> {
-  // Ensure temp directory exists
-  const tempDir = './temp/videos';
-  await mkdir(tempDir, { recursive: true });
+  // Use system temp directory instead of local ./temp folder
+  const tempDir = tmpdir();
 
   // Generate unique output filename
   const timestamp = Date.now();
-  const outputPath = join(tempDir, `final-video-${timestamp}.mp4`);
+  const randomSuffix = Math.random().toString(36).substring(7);
+  const outputPath = join(tempDir, `final-video-${timestamp}-${randomSuffix}.mp4`);
 
   // Get configuration
   const sourceVideoPath = config.sourceVideoPath;

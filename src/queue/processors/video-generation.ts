@@ -1,6 +1,7 @@
 import type { VideoGenerationJobData } from '#root/queue/definitions/video-generation.js';
 import type { Job } from 'bullmq';
 import type { Bot } from 'grammy';
+import { unlink } from 'node:fs/promises';
 import { config } from '#root/config.js';
 import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
@@ -19,6 +20,9 @@ import { InlineKeyboard, InputFile } from 'grammy';
 export function createVideoGenerationProcessor(botApi: Bot['api']) {
   return async (job: Job<VideoGenerationJobData>) => {
     const { assetId } = job.data;
+
+    let audioPath: string | undefined;
+    let videoPath: string | undefined;
 
     try {
       logger.info({ assetId }, `Processing VideoAsset ${assetId}...`);
@@ -57,10 +61,19 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
       logger.info({ assetId, subscribersCount: asset.userRequests.length, name: asset.name }, `Generating video for ${asset.userRequests.length} subscriber(s)`);
 
       // 3. Generate audio using TTS service (uses normalized name)
-      const audioPath = await ttsService.generate(asset.name);
+      audioPath = await ttsService.generate(asset.name);
 
       // 4. Generate video using video service
-      const videoPath = await videoService.mergeAudioWithVideo(audioPath);
+      videoPath = await videoService.mergeAudioWithVideo(audioPath);
+
+      // 4.1. Clean up temporary audio file immediately after merging
+      try {
+        await unlink(audioPath);
+        logger.debug({ audioPath }, 'Deleted temporary audio file after merging');
+      }
+      catch (unlinkError) {
+        logger.debug({ error: unlinkError }, 'Could not delete temp audio file');
+      }
 
       // 5. Send video to first user and capture file_id from Telegram
       const firstUser = asset.userRequests[0];
@@ -141,6 +154,16 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
       });
 
       logger.info({ assetId, subscribersCount: asset.userRequests.length }, `✅ Video generation completed and delivered to ${asset.userRequests.length} subscriber(s)`);
+
+      // 9. Clean up temporary video file after successful delivery
+      try {
+        await unlink(videoPath);
+        logger.debug({ videoPath }, 'Deleted temporary video file after successful delivery');
+      }
+      catch (unlinkError) {
+        // Don't fail the job if we can't delete the temp file
+        logger.warn({ error: unlinkError, videoPath }, 'Failed to delete temporary video file');
+      }
     }
     catch (error) {
       // Add attempt information for better debugging
@@ -224,6 +247,27 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
       }
       else {
         logger.info({ assetId, nextAttempt: currentAttempt + 1 }, 'Will retry - keeping PENDING status');
+      }
+
+      // Clean up any temporary files that may have been created
+      if (audioPath !== undefined) {
+        try {
+          await unlink(audioPath);
+          logger.debug({ audioPath }, 'Deleted temporary audio file after error');
+        }
+        catch (unlinkError) {
+          logger.debug({ error: unlinkError }, 'Could not delete temp audio file');
+        }
+      }
+
+      if (videoPath !== undefined) {
+        try {
+          await unlink(videoPath);
+          logger.debug({ videoPath }, 'Deleted temporary video file after error');
+        }
+        catch (unlinkError) {
+          logger.debug({ error: unlinkError }, 'Could not delete temp video file');
+        }
       }
 
       // Re-throw error for BullMQ retry logic

@@ -1,27 +1,10 @@
 import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { config } from '#root/config.js';
 import { logger } from '#root/logger.js';
 
-// Helper to get directory name in ESM
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-
-const TEMP_AUDIO_DIR = join(__dirname, '../../temp/audio');
-
-async function ensureDirectoryExists(path: string) {
-  try {
-    await fs.mkdir(path, { recursive: true });
-  }
-  catch (error) {
-    logger.error({ error }, 'Failed to create temporary directory');
-    throw error;
-  }
-}
-
 export async function generate(childName: string): Promise<string> {
-  await ensureDirectoryExists(TEMP_AUDIO_DIR);
-
   const textToSpeak = `${childName}!`;
   const voiceId = config.elevenlabsVoiceId;
   const apiKey = config.elevenlabsApiKey;
@@ -62,12 +45,15 @@ export async function generate(childName: string): Promise<string> {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const filename = `${childName}-${Date.now()}.mp3`;
-    const filePath = join(TEMP_AUDIO_DIR, filename);
+    // Use system temp directory instead of local ./temp folder
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(7);
+    const filename = `tts-${childName}-${timestamp}-${randomSuffix}.mp3`;
+    const filePath = join(tmpdir(), filename);
 
     await fs.writeFile(filePath, buffer);
 
-    logger.info(`Generated audio saved to: ${filePath}`);
+    logger.debug({ filePath }, 'Generated audio saved to temp');
     return filePath;
   }
   catch (error) {
