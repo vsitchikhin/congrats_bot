@@ -83,7 +83,6 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
         Number.parseInt(firstUser.userId.toString()),
         new InputFile(videoPath),
         {
-          caption: 'Вот ваше персональное новогоднее поздравление! 🎉',
           width: 1920,
           height: 1080,
         },
@@ -102,10 +101,14 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
 
       await sendCoupons(botApi, Number.parseInt(firstUser.userId.toString()), config.sendCoupons);
 
+      const capitalizedName = asset.name.charAt(0).toUpperCase() + asset.name.slice(1);
       await botApi.sendMessage(
         Number.parseInt(firstUser.userId.toString()),
-        `Ваше видеопоздравление для ${asset.name} готово! 🎊`,
-        { reply_markup: keyboard },
+        `Ваша новогодняя открытка для <b>${capitalizedName}</b> готова! 🎁`,
+        {
+          reply_markup: keyboard,
+          parse_mode: 'HTML',
+        },
       );
 
       // 6. Update asset with file_id and mark as AVAILABLE
@@ -126,7 +129,6 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
           Number.parseInt(userRequest.userId.toString()),
           fileId, // Use cached file_id - no re-upload needed!
           {
-            caption: 'Вот ваше персональное новогоднее поздравление! 🎉',
             width: 1920,
             height: 1080,
           },
@@ -137,8 +139,11 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
 
         await botApi.sendMessage(
           Number.parseInt(userRequest.userId.toString()),
-          `Ваше видеопоздравление для ${asset.name} готово! 🎊`,
-          { reply_markup: keyboard },
+          `Ваша новогодняя открытка <b>${capitalizedName}</b> готова! 🎁`,
+          {
+            reply_markup: keyboard,
+            parse_mode: 'HTML',
+          },
         );
       }
 

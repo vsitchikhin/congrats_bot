@@ -6,6 +6,7 @@ import { prisma } from '#root/db/client.js';
 import { logger } from '#root/logger.js';
 import { getVideoGenerationQueue } from '#root/queue/definitions/video-generation.js';
 import { sendCoupons } from '#root/services/coupons.js';
+import { profanityFilter } from '#root/services/profanity-filter.js';
 import { createConversation } from '@grammyjs/conversations';
 import { Composer, InlineKeyboard, Keyboard } from 'grammy';
 
@@ -154,6 +155,7 @@ interface ValidationResult {
 export function validateChildName(name: string): ValidationResult {
   const trimmedName = name.trim();
 
+  // 1. Length validation
   if (trimmedName.length < MIN_NAME_LENGTH) {
     return { isValid: false, errorKey: 'greeting-name-too-short' };
   }
@@ -162,8 +164,20 @@ export function validateChildName(name: string): ValidationResult {
     return { isValid: false, errorKey: 'greeting-name-too-long' };
   }
 
+  // 2. Character validation
   if (!VALID_NAME_REGEX.test(trimmedName)) {
     return { isValid: false, errorKey: 'greeting-name-invalid-chars' };
+  }
+
+  // 3. Single word validation
+  const words = trimmedName.split(/\s+/).filter(word => word.length > 0);
+  if (words.length > 1) {
+    return { isValid: false, errorKey: 'greeting-name-multiple-words' };
+  }
+
+  // 4. Profanity check
+  if (profanityFilter.check(trimmedName)) {
+    return { isValid: false, errorKey: 'greeting-name-inappropriate' };
   }
 
   return { isValid: true };
@@ -193,7 +207,7 @@ export async function greetingConversation(
 
       // Only show welcome message if this is NOT a reorder
       if (!ctx.session.isReordering) {
-        await ctx.reply('С возвращением! 👋');
+        await ctx.reply('С возвращением! Рады видеть вас снова! 🎄');
       }
       // Clear the reordering flag
       ctx.session.isReordering = false;
@@ -277,7 +291,7 @@ export async function greetingConversation(
   let isConfirmed = false;
 
   while (!isConfirmed) {
-    await ctx.reply('Пожалуйста, введите имя ребенка:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
+    await ctx.reply('✨ Введите имя ребенка, для которого создается видеопоздравление:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
       parse_mode: 'HTML',
     });
 
@@ -308,6 +322,8 @@ export async function greetingConversation(
         'greeting-name-too-short': '⚠️ Имя слишком короткое! Пожалуйста, введите имя длиной не менее 2 символов.',
         'greeting-name-too-long': '⚠️ Имя слишком длинное! Максимальная длина - 50 символов.',
         'greeting-name-invalid-chars': '⚠️ Имя содержит недопустимые символы! Используйте только буквы, пробелы и дефисы.',
+        'greeting-name-multiple-words': '⚠️ Имя должно содержать только одно слово.',
+        'greeting-name-inappropriate': '⚠️ Это имя содержит недопустимые выражения. Пожалуйста, введите другое имя.',
       };
       await ctx.reply(errorMessages[validation.errorKey!] || 'Ошибка валидации');
       continue; // Ask again
@@ -385,7 +401,7 @@ export async function greetingConversation(
       });
 
       logger.info({ userId: ctx.from!.id, conversationId, assetId: result.assetId }, '✅ Task added to queue');
-      await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку. Видео будет готово в ближайшее время!');
+      await ctx.reply('Ваше видеопоздравление готовится. Открытка будет готова в ближайшее время! 🌲');
     }
   }
   catch (error) {
@@ -424,7 +440,7 @@ composer.callbackQuery('order_another_video', async (ctx) => {
   // Start ordering process without conversation
   ctx.session.orderingFlow = { step: 'waiting_name' };
 
-  await ctx.reply('Отлично! Давайте создадим еще одно поздравление.\n\nПожалуйста, введите имя ребенка:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
+  await ctx.reply('Замечательно! 🎁 Создадим еще одно новогоднее поздравление!\n\n✨ Введите имя ребенка, для которого создается видеопоздравление:\n\n💡 <i>Если в имени есть буква «ё», используйте именно её — так озвучка будет качественнее!</i>', {
     parse_mode: 'HTML',
   });
 });
@@ -461,6 +477,8 @@ composer.on('message:text', async (ctx, next) => {
         'greeting-name-too-short': '⚠️ Имя слишком короткое! Пожалуйста, введите имя длиной не менее 2 символов.',
         'greeting-name-too-long': '⚠️ Имя слишком длинное! Максимальная длина - 50 символов.',
         'greeting-name-invalid-chars': '⚠️ Имя содержит недопустимые символы! Используйте только буквы, пробелы и дефисы.',
+        'greeting-name-multiple-words': '⚠️ Имя должно содержать только одно слово.',
+        'greeting-name-inappropriate': '⚠️ Это имя содержит недопустимые выражения. Пожалуйста, введите другое имя.',
       };
       await ctx.reply(errorMessages[validation.errorKey!] || 'Ошибка валидации');
       return;
@@ -539,7 +557,7 @@ composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx
       });
 
       logger.info({ userId: ctx.from.id, assetId: result.assetId }, '✅ Reorder task added to queue');
-      await ctx.reply('⏳ Отлично! Ваш заказ принят в обработку. Видео будет готово в ближайшее время!');
+      await ctx.reply('Ваше видеопоздравление готовится. Открытка будет готова в ближайшее время! 🌲');
     }
   }
   catch (error) {
