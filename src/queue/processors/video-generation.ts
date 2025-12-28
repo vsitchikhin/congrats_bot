@@ -11,6 +11,39 @@ import { videoService } from '#root/services/video.js';
 import { InlineKeyboard, InputFile } from 'grammy';
 
 /**
+ * Sends a notification to the configured notification group about a new order.
+ */
+async function sendGroupNotification(
+  botApi: Bot['api'],
+  username: string | undefined,
+  firstName: string,
+  phoneNumber: string,
+  childAge: number | undefined | null,
+) {
+  // Skip if no chat ID is configured
+  if (!config.notificationGroupChatId || config.notificationGroupChatId === '') {
+    logger.debug('Notification group chat ID not configured, skipping notification');
+    return;
+  }
+
+  const userDisplay = username !== undefined && username !== '' ? `@${username}` : firstName;
+  const ageText = childAge !== undefined && childAge !== null
+    ? `🧒 Возраст ребенка: ${childAge}`
+    : '🧒 Возраст: не указан';
+
+  const message = `Заявка от ${userDisplay}\n${ageText}\n☎️ Телефон: ${phoneNumber}`;
+
+  try {
+    await botApi.sendMessage(config.notificationGroupChatId, message);
+    logger.info({ chatId: config.notificationGroupChatId }, '📢 Notification sent to group');
+  }
+  catch (error) {
+    // Don't fail the job if notification fails
+    logger.error({ error, chatId: config.notificationGroupChatId }, 'Failed to send group notification');
+  }
+}
+
+/**
  * Creates a processor function for the video-generation queue.
  * The processor handles video generation for VideoAssets and broadcasts to all subscribers.
  *
@@ -100,6 +133,15 @@ export function createVideoGenerationProcessor(botApi: Bot['api']) {
         .text('🎄 Заказать еще одно видео', 'order_another_video');
 
       await sendCoupons(botApi, Number.parseInt(firstUser.userId.toString()), config.sendCoupons);
+
+      // 5.2. Send notification to group about new order (FIRST generation only)
+      await sendGroupNotification(
+        botApi,
+        firstUser.user.username ?? undefined,
+        firstUser.user.firstName,
+        firstUser.user.phoneNumber ?? 'не указан',
+        firstUser.childAge ?? undefined,
+      );
 
       const capitalizedName = asset.name.charAt(0).toUpperCase() + asset.name.slice(1);
       await botApi.sendMessage(

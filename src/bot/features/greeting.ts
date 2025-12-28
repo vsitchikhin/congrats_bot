@@ -40,6 +40,7 @@ interface VideoRequestResult {
 async function handleVideoRequest(
   userId: bigint,
   childName: string,
+  childAge?: number,
 ): Promise<VideoRequestResult> {
   const normalizedName = normalizeChildName(childName);
 
@@ -76,6 +77,7 @@ async function handleVideoRequest(
             userId,
             assetId: asset.id,
             status: 'COMPLETED',
+            childAge,
           },
         });
 
@@ -94,6 +96,7 @@ async function handleVideoRequest(
             userId,
             assetId: asset.id,
             status: 'PENDING',
+            childAge,
           },
         });
 
@@ -123,6 +126,7 @@ async function handleVideoRequest(
         userId,
         assetId: asset.id,
         status: 'PENDING',
+        childAge,
       },
     });
 
@@ -145,6 +149,30 @@ const MIN_NAME_LENGTH = 2;
 const MAX_NAME_LENGTH = 50;
 // Using unicode ranges for Cyrillic letters to avoid obscure character range warnings
 const VALID_NAME_REGEX = /^[\u0400-\u04FFa-zA-Z\s-]+$/;
+
+// Age validation constants
+const MIN_CHILD_AGE = 1;
+const MAX_CHILD_AGE = 18;
+
+// Helper to get correct Russian word for "years" (год/года/лет)
+function getYearsWord(age: number): string {
+  const lastDigit = age % 10;
+  const lastTwoDigits = age % 100;
+
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) {
+    return 'лет';
+  }
+
+  if (lastDigit === 1) {
+    return 'год';
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4) {
+    return 'года';
+  }
+
+  return 'лет';
+}
 
 // Validation helper
 interface ValidationResult {
@@ -368,11 +396,41 @@ export async function greetingConversation(
     }
   }
 
+  // Step 4.5: Ask for child's age
+  let childAge: number | undefined;
+  let ageConfirmed = false;
+
+  while (!ageConfirmed) {
+    await ctx.reply('🎂 Сколько лет ребенку?\n\nВведите возраст (от 1 до 18 лет):');
+
+    const ageCtx = await conversation.waitFor('message:text');
+
+    // Check for cancellation
+    if (ageCtx.message?.text === '/cancel') {
+      await ctx.reply('❌ Диалог отменён. Введите /start для повтора.');
+      logger.info({ userId: ctx.from!.id, conversationId }, '🔴 CONVERSATION CANCELLED at age step');
+      return;
+    }
+
+    const ageInput = ageCtx.message?.text?.trim();
+    const parsedAge = Number.parseInt(ageInput || '', 10);
+
+    // Validate age
+    if (Number.isNaN(parsedAge) || parsedAge < MIN_CHILD_AGE || parsedAge > MAX_CHILD_AGE) {
+      await ctx.reply(`⚠️ Пожалуйста, введите корректный возраст от ${MIN_CHILD_AGE} до ${MAX_CHILD_AGE} лет.`);
+      continue;
+    }
+
+    childAge = parsedAge;
+    ageConfirmed = true;
+    logger.info({ userId: ctx.from!.id, conversationId, childAge }, '🎂 Child age received and validated');
+  }
+
   // Step 5: Handle video request with caching and deduplication
   try {
-    logger.info({ userId: ctx.from!.id, conversationId, childName }, '🎬 Processing video request...');
+    logger.info({ userId: ctx.from!.id, conversationId, childName, childAge }, '🎬 Processing video request...');
 
-    const result = await handleVideoRequest(BigInt(ctx.from!.id), childName);
+    const result = await handleVideoRequest(BigInt(ctx.from!.id), childName, childAge);
 
     if (result.type === 'send_cached') {
       // Video is already available - send it immediately
@@ -484,18 +542,37 @@ composer.on('message:text', async (ctx, next) => {
       return;
     }
 
-    // Name is valid - ask for confirmation
+    // Name is valid - ask for age (NEW)
     orderState.childName = inputText;
+    orderState.step = 'waiting_age';
+
+    await ctx.reply('🎂 Сколько лет ребенку?\n\nВведите возраст (от 1 до 18 лет):');
+    return;
+  }
+
+  // Add new handler for age (NEW)
+  if (orderState.step === 'waiting_age') {
+    const parsedAge = Number.parseInt(inputText, 10);
+
+    if (Number.isNaN(parsedAge) || parsedAge < MIN_CHILD_AGE || parsedAge > MAX_CHILD_AGE) {
+      await ctx.reply(`⚠️ Пожалуйста, введите корректный возраст от ${MIN_CHILD_AGE} до ${MAX_CHILD_AGE} лет.`);
+      return;
+    }
+
+    orderState.childAge = parsedAge;
     orderState.step = 'waiting_confirm';
 
     const keyboard = new InlineKeyboard()
       .text('✅ Да, всё верно', 'reorder_confirm_yes')
       .text('❌ Нет, ввести заново', 'reorder_confirm_no');
 
-    await ctx.reply(`Вы указали имя: <b>${inputText}</b>. Всё верно?`, {
-      reply_markup: keyboard,
-      parse_mode: 'HTML',
-    });
+    await ctx.reply(
+      `Вы указали:\n<b>Имя:</b> ${orderState.childName}\n<b>Возраст:</b> ${orderState.childAge} ${getYearsWord(orderState.childAge)}\n\nВсё верно?`,
+      {
+        reply_markup: keyboard,
+        parse_mode: 'HTML',
+      },
+    );
   }
 });
 
@@ -513,22 +590,24 @@ composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx
   }
 
   if (ctx.callbackQuery.data === 'reorder_confirm_no') {
-    // User wants to re-enter name
+    // User wants to re-enter - reset to name step
     orderState.step = 'waiting_name';
     delete orderState.childName;
+    delete orderState.childAge;
     await ctx.reply('Хорошо, введите имя ребенка заново:');
     return;
   }
 
   // User confirmed - process video request
   const childName = orderState.childName;
+  const childAge = orderState.childAge;
   ctx.session.orderingFlow = undefined;
   ctx.session.isReordering = false;
 
   try {
-    logger.info({ userId: ctx.from.id, childName }, '🎬 Processing reorder video request...');
+    logger.info({ userId: ctx.from.id, childName, childAge }, '🎬 Processing reorder video request...');
 
-    const result = await handleVideoRequest(BigInt(ctx.from.id), childName);
+    const result = await handleVideoRequest(BigInt(ctx.from.id), childName, childAge);
 
     if (result.type === 'send_cached') {
       // Video is already available - send it immediately

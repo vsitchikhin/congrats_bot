@@ -20,6 +20,8 @@ const baseConfigSchema = v.object({
   audioInsertTimecode: v.optional(v.string(), '1:00:28:21'), // Timecode where audio should be inserted (format: H:MM:SS:FF)
   // Coupon Configuration
   sendCoupons: v.optional(v.pipe(v.string(), v.transform(JSON.parse), v.boolean()), 'true'), // Whether to send coupon images after video
+  // Notification Configuration
+  notificationGroupChatId: v.optional(v.string(), ''), // Chat ID for new order notifications
 });
 
 const configSchema = v.variant('botMode', [

@@ -53,6 +53,7 @@ services:
       - SOURCE_VIDEO_PATH=${SOURCE_VIDEO_PATH:-./assets/source-video.mp4}
       - AUDIO_INSERT_TIMECODE=${AUDIO_INSERT_TIMECODE:-1:00:28:21}
       - SEND_COUPONS=${SEND_COUPONS:-true}
+      - NOTIFICATION_GROUP_CHAT_ID=${NOTIFICATION_GROUP_CHAT_ID:-}
     volumes:
       - ./assets:/usr/src/app/assets:ro
       - ./temp:/usr/src/app/temp
@@ -78,6 +79,7 @@ services:
       - SOURCE_VIDEO_PATH=${SOURCE_VIDEO_PATH:-./assets/source-video.mp4}
       - AUDIO_INSERT_TIMECODE=${AUDIO_INSERT_TIMECODE:-1:00:28:21}
       - SEND_COUPONS=${SEND_COUPONS:-true}
+      - NOTIFICATION_GROUP_CHAT_ID=${NOTIFICATION_GROUP_CHAT_ID:-}
     volumes:
       - ./assets:/usr/src/app/assets:ro
       - ./temp:/usr/src/app/temp

@@ -59,8 +59,9 @@ model VideoAsset {
 
 // Model for a user's request to receive a video
 model UserRequest {
-  id     String        @id @default(cuid())
-  status RequestStatus @default(PENDING)
+  id       String        @id @default(cuid())
+  status   RequestStatus @default(PENDING)
+  childAge Int?          // Age of the child for this specific request (1-18 years)
 
   user   User   @relation(fields: [userId], references: [id])
   userId BigInt
