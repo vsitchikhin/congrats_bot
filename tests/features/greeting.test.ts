@@ -341,6 +341,10 @@ describe('greetingFeature - Save and Queue Flow', () => {
       .mockResolvedValueOnce({
         ...ctx,
         callbackQuery: { data: 'confirm_yes' },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { text: '7' },
       });
 
     // Run the conversation logic
@@ -379,6 +383,10 @@ describe('greetingFeature - Save and Queue Flow', () => {
       .mockResolvedValueOnce({
         ...ctx,
         callbackQuery: { data: 'confirm_yes' },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { text: '7' },
       });
 
     // Run the conversation logic
@@ -431,6 +439,10 @@ describe('greetingFeature - Save and Queue Flow', () => {
       .mockResolvedValueOnce({
         ...ctx,
         callbackQuery: { data: 'confirm_yes' },
+      })
+      .mockResolvedValueOnce({
+        ...ctx,
+        message: { text: '7' },
       });
 
     // Run the conversation logic
