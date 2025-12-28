@@ -57,6 +57,7 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
   protectedBot.use(session({
     initial: () => ({ locale: 'ru' }),
     storage: new MemorySessionStorage(),
+    getSessionKey, // CRITICAL: Use same key as sequentialize to prevent race conditions
     // TODO: PrismaAdapter doesn't work with conversations - need to investigate
     // storage: new PrismaAdapter(prisma.session as any),
   }));

@@ -234,19 +234,21 @@ export async function greetingConversation(
       phoneNumber = existingUser.phoneNumber;
 
       // Only show welcome message if this is NOT a reorder
-      if (!ctx.session.isReordering) {
+      if (ctx.session?.isReordering !== true) {
         await ctx.reply('С возвращением! Рады видеть вас снова! 🎄');
       }
       // Clear the reordering flag
-      ctx.session.isReordering = false;
+      if (ctx.session !== undefined) {
+        ctx.session.isReordering = false;
+      }
     }
   }
   catch (error) {
-    logger.error({ error, userId: ctx.from!.id }, 'Failed to check user in database');
+    logger.error({ err: error, userId: ctx.from!.id }, 'Failed to check user in database');
   }
 
   // Step 2: If no phone number exists, ask for it
-  if (!phoneNumber) {
+  if (phoneNumber === '') {
     let phoneReceived = false;
 
     while (!phoneReceived) {
@@ -483,8 +485,13 @@ composer.command('start', async (ctx) => {
 composer.callbackQuery('order_another_video', async (ctx) => {
   await ctx.answerCallbackQuery();
 
+  // Initialize session if undefined
+  if (ctx.session === undefined) {
+    ctx.session = { locale: 'ru' };
+  }
+
   // Check if user already has an active ordering process
-  if (ctx.session.orderingFlow) {
+  if (ctx.session.orderingFlow !== undefined) {
     logger.warn({ userId: ctx.from.id }, 'User tried to order another video while order is in progress');
     await ctx.reply('⏳ Пожалуйста, дождитесь завершения текущего заказа.');
     return;
@@ -505,10 +512,15 @@ composer.callbackQuery('order_another_video', async (ctx) => {
 
 // Handle messages for users ordering without conversation
 composer.on('message:text', async (ctx, next) => {
+  // Initialize session if undefined
+  if (ctx.session === undefined) {
+    ctx.session = { locale: 'ru' };
+  }
+
   const orderState = ctx.session.orderingFlow;
 
   // If user is not in ordering process, skip to next handler
-  if (!orderState) {
+  if (orderState === undefined) {
     return next();
   }
 
@@ -580,9 +592,14 @@ composer.on('message:text', async (ctx, next) => {
 composer.callbackQuery(['reorder_confirm_yes', 'reorder_confirm_no'], async (ctx) => {
   await ctx.answerCallbackQuery();
 
+  // Initialize session if undefined
+  if (ctx.session === undefined) {
+    ctx.session = { locale: 'ru' };
+  }
+
   const orderState = ctx.session.orderingFlow;
 
-  if (!orderState || orderState.childName === undefined) {
+  if (orderState === undefined || orderState.childName === undefined) {
     await ctx.reply('❌ Ошибка: данные заказа не найдены. Попробуйте снова.');
     ctx.session.orderingFlow = undefined;
     ctx.session.isReordering = false;
