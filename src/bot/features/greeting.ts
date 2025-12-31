@@ -292,45 +292,25 @@ export async function greetingConversation(
 
   // Step 2: If no phone number exists, ask for it
   if (phoneNumber === '') {
-    let phoneReceived = false;
+    // Create keyboard with "Share phone number" button
+    const phoneKeyboard = new Keyboard()
+      .requestContact('📱 Поделиться номером телефона')
+      .resized();
 
-    while (!phoneReceived) {
-      // Create keyboard with "Share phone number" button
-      const phoneKeyboard = new Keyboard()
-        .requestContact('📱 Поделиться номером телефона')
-        .resized();
+    await ctx.reply('Добро пожаловать в бота "Новогоднее поздравление"! 🎄\n\nПожалуйста, поделитесь своим номером телефона, нажав на кнопку ниже:', {
+      reply_markup: phoneKeyboard,
+    });
 
-      await ctx.reply('Добро пожаловать в бота "Новогоднее поздравление"! 🎄\n\nПожалуйста, поделитесь своим номером телефона, нажав на кнопку ниже:', {
-        reply_markup: phoneKeyboard,
-      });
+    // Wait for contact only - use conversation.skip() for other message types
+    const phoneCtx = await conversation.waitFor(':contact');
 
-      // Wait for user's response (ignore non-contact messages from worker)
-      const phoneCtx = await conversation.waitFor([':contact', 'message:text']);
+    // Extract phone number from contact (guaranteed to exist due to :contact filter)
+    phoneNumber = phoneCtx.message?.contact?.phone_number ?? '';
 
-      // Check for cancellation
-      if (phoneCtx.message?.text === '/cancel') {
-        await phoneCtx.reply('❌ Диалог отменён. Введите /start для повтора.', {
-          reply_markup: { remove_keyboard: true },
-        });
-        return;
-      }
-
-      // Check if user shared contact
-      if (phoneCtx.message?.contact) {
-        phoneNumber = phoneCtx.message.contact.phone_number;
-        phoneReceived = true;
-
-        // Remove keyboard after receiving contact
-        await phoneCtx.reply('✅ Спасибо! Номер телефона получен.', {
-          reply_markup: { remove_keyboard: true },
-        });
-      }
-      else {
-        // User sent text instead of sharing contact
-        await phoneCtx.reply('⚠️ Некорректный номер телефона. Пожалуйста, используйте кнопку "Поделиться номером телефона".');
-        // Loop will restart and ask for phone again
-      }
-    }
+    // Remove keyboard after receiving contact
+    await phoneCtx.reply('✅ Спасибо! Номер телефона получен.', {
+      reply_markup: { remove_keyboard: true },
+    });
 
     // Step 3: Save/update user in database
     try {
