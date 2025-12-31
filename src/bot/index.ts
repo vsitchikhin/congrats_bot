@@ -6,6 +6,7 @@ import { adminFeature } from '#root/bot/features/admin.js';
 import { greetingFeature } from '#root/bot/features/greeting.js';
 import { unhandledFeature } from '#root/bot/features/unhandled.js';
 import { errorHandler } from '#root/bot/handlers/error.js';
+import { FileSessionStorage } from '#root/bot/helpers/file-session-storage.js';
 import { i18n } from '#root/bot/i18n.js';
 // import { session } from '#root/bot/middlewares/session.js';
 import { updateLogger } from '#root/bot/middlewares/update-logger.js';
@@ -14,7 +15,7 @@ import { conversations } from '@grammyjs/conversations';
 import { hydrate } from '@grammyjs/hydrate';
 import { hydrateReply, parseMode } from '@grammyjs/parse-mode';
 import { sequentialize } from '@grammyjs/runner';
-import { MemorySessionStorage, session, Bot as TelegramBot } from 'grammy';
+import { session, Bot as TelegramBot } from 'grammy';
 
 interface Dependencies {
   config: Config;
@@ -56,10 +57,10 @@ export function createBot(token: string, dependencies: Dependencies, botConfig?:
   protectedBot.use(hydrate());
   protectedBot.use(session({
     initial: () => ({ locale: 'ru' }),
-    storage: new MemorySessionStorage(),
+    storage: new FileSessionStorage(),
     getSessionKey, // CRITICAL: Use same key as sequentialize to prevent race conditions
-    // TODO: PrismaAdapter doesn't work with conversations - need to investigate
-    // storage: new PrismaAdapter(prisma.session as any),
+    // IMPORTANT: FileSessionStorage persists session between bot restarts,
+    // fixing "Bad replay" errors that occurred with MemorySessionStorage
   }));
   protectedBot.use(i18n);
   protectedBot.use(conversations());

@@ -283,6 +283,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
     const { prisma } = await import('#root/db/client.js');
 
     // Mock Prisma and Queue modules
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null);
     vi.mocked(prisma.user.upsert).mockResolvedValue({} as any);
 
     // Mock conversation object
@@ -291,6 +292,8 @@ describe('greetingFeature - Save and Queue Flow', () => {
       wait: vi.fn(),
       update: vi.fn(),
       log: vi.fn(),
+      external: vi.fn((fn: () => any) => fn()), // Execute function immediately
+      _offset: 0, // Mock replay offset
     };
 
     // Mock context object
@@ -299,6 +302,7 @@ describe('greetingFeature - Save and Queue Flow', () => {
       reply: vi.fn(),
       answerCallbackQuery: vi.fn(),
       t: (key: string) => key, // Mock i18n
+      update: {}, // Mock update object for logging
     };
   });
 

@@ -261,16 +261,32 @@ export async function greetingConversation(
 ) {
   // Generate unique ID for this conversation run to track it in logs
   const conversationId = Math.random().toString(36).substring(7);
-  logger.info({ userId: ctx.from!.id, conversationId }, '🔵 CONVERSATION STARTED');
+  // Check if this is a replay by looking at conversation internal state
+  const isReplay = (conversation as any)._offset > 0;
+
+  logger.info(
+    {
+      userId: ctx.from!.id,
+      conversationId,
+      messageText: ctx.message?.text,
+      hasContact: ctx.message?.contact !== undefined,
+      updateType: ctx.update?.message ? 'message' : ctx.update?.callback_query ? 'callback_query' : 'other',
+      isReplay,
+      conversationOffset: (conversation as any)._offset,
+    },
+    isReplay ? '🔄 CONVERSATION REPLAY' : '🔵 CONVERSATION STARTED',
+  );
 
   // Step 1: Check if user already has phone number in database
   let phoneNumber = '';
 
   try {
-    const existingUser = await prisma.user.findUnique({
-      where: { id: BigInt(ctx.from!.id) },
-      select: { phoneNumber: true },
-    });
+    const existingUser = await conversation.external(async () =>
+      prisma.user.findUnique({
+        where: { id: BigInt(ctx.from!.id) },
+        select: { phoneNumber: true },
+      }),
+    );
 
     if (existingUser && existingUser.phoneNumber !== null) {
       // User already has phone number, use it
@@ -313,24 +329,28 @@ export async function greetingConversation(
     });
 
     // Step 3: Save/update user in database
+    // IMPORTANT: Wrap external async operations (DB, API calls) in conversation.external()
+    // This prevents them from being replayed and breaking conversation state
     try {
-      await prisma.user.upsert({
-        where: { id: BigInt(ctx.from!.id) },
-        update: {
-          phoneNumber,
-          firstName: ctx.from!.first_name,
-          lastName: ctx.from?.last_name ?? null,
-          username: ctx.from?.username ?? null,
-        },
-        create: {
-          id: BigInt(ctx.from!.id),
-          phoneNumber,
-          isBot: ctx.from!.is_bot,
-          firstName: ctx.from!.first_name,
-          lastName: ctx.from?.last_name ?? null,
-          username: ctx.from?.username ?? null,
-        },
-      });
+      await conversation.external(async () =>
+        prisma.user.upsert({
+          where: { id: BigInt(ctx.from!.id) },
+          update: {
+            phoneNumber,
+            firstName: ctx.from!.first_name,
+            lastName: ctx.from?.last_name ?? null,
+            username: ctx.from?.username ?? null,
+          },
+          create: {
+            id: BigInt(ctx.from!.id),
+            phoneNumber,
+            isBot: ctx.from!.is_bot,
+            firstName: ctx.from!.first_name,
+            lastName: ctx.from?.last_name ?? null,
+            username: ctx.from?.username ?? null,
+          },
+        }),
+      );
     }
     catch (error) {
       logger.error({ error, userId: ctx.from!.id }, 'Failed to save user to database');
@@ -455,7 +475,9 @@ export async function greetingConversation(
   try {
     logger.info({ userId: ctx.from!.id, conversationId, childName, childAge }, '🎬 Processing video request...');
 
-    const result = await handleVideoRequest(BigInt(ctx.from!.id), childName, childAge);
+    const result = await conversation.external(async () =>
+      handleVideoRequest(BigInt(ctx.from!.id), childName, childAge),
+    );
 
     if (result.type === 'send_cached') {
       // Video is already available - send it immediately
@@ -463,7 +485,9 @@ export async function greetingConversation(
       await ctx.replyWithVideo(result.fileId!);
 
       // Send coupons after video
-      await sendCoupons(ctx.api, ctx.from!.id, config.sendCoupons);
+      await conversation.external(async () =>
+        sendCoupons(ctx.api, ctx.from!.id, config.sendCoupons),
+      );
 
       await ctx.reply('✅ Видео готово! Можете заказать еще одно поздравление.', {
         reply_markup: new InlineKeyboard().text('🎬 Заказать еще одно видео', 'order_another_video'),
@@ -478,9 +502,11 @@ export async function greetingConversation(
       // New video generation needed - add to queue
       logger.info({ userId: ctx.from!.id, conversationId, assetId: result.assetId, childName }, '➕ Adding new generation task to queue');
 
-      const queue = getVideoGenerationQueue();
-      await queue.add('generate-video', {
-        assetId: result.assetId!,
+      await conversation.external(async () => {
+        const queue = getVideoGenerationQueue();
+        await queue.add('generate-video', {
+          assetId: result.assetId!,
+        });
       });
 
       logger.info({ userId: ctx.from!.id, conversationId, assetId: result.assetId }, '✅ Task added to queue');
@@ -500,7 +526,16 @@ composer.use(createConversation(greetingConversation, GREETING_CONVERSATION_NAME
 
 // Command handler to start the conversation
 composer.command('start', async (ctx) => {
-  logger.info({ userId: ctx.from?.id }, 'User started conversation with /start command');
+  logger.info(
+    {
+      userId: ctx.from?.id,
+      sessionExists: ctx.session !== undefined,
+      conversationData: (ctx.session as any)?.conversation,
+    },
+    'User started conversation with /start command',
+  );
+
+  // Enter the greeting conversation
   await ctx.conversation.enter(GREETING_CONVERSATION_NAME);
 });
 
