@@ -23,7 +23,7 @@ export async function sendCoupons(botApi: Api, userId: number, enabled: boolean 
     return;
   }
 
-  const couponKeys = ['coupon1', 'coupon2'];
+  const couponKeys = ['coupon3', 'coupon4'];
   const assetsDir = path.resolve(__dirname, '../../../assets');
 
   for (const key of couponKeys) {
