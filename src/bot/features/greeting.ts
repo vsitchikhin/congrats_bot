@@ -36,6 +36,47 @@ interface VideoRequestResult {
   assetName?: string;
 }
 
+// Helper function to retry serializable transaction on serialization errors
+async function retrySerializableTransaction<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    }
+    catch (error: unknown) {
+      lastError = error;
+
+      // Check if this is a serialization error that can be retried
+      const isSerializationError = error instanceof Error
+        && (error.message.includes('could not serialize access')
+          || error.message.includes('deadlock detected'));
+
+      if (!isSerializationError || attempt === maxRetries) {
+        throw error;
+      }
+
+      // Log retry attempt
+      logger.warn(
+        {
+          attempt,
+          maxRetries,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        '⚠️ Serialization error, retrying transaction...',
+      );
+
+      // Exponential backoff: 10ms, 20ms, 40ms...
+      await new Promise(resolve => setTimeout(resolve, 10 * (2 ** (attempt - 1))));
+    }
+  }
+
+  throw lastError;
+}
+
 // Main function to handle video request with caching and deduplication
 async function handleVideoRequest(
   userId: bigint,
@@ -44,100 +85,102 @@ async function handleVideoRequest(
 ): Promise<VideoRequestResult> {
   const normalizedName = normalizeChildName(childName);
 
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  return retrySerializableTransaction(async () => {
+    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // 1. Find existing VideoAsset for this name
-    let asset = await tx.videoAsset.findUnique({
-      where: { name: normalizedName },
-    });
+      let asset = await tx.videoAsset.findUnique({
+        where: { name: normalizedName },
+      });
 
-    let shouldGenerateVideo = false;
+      let shouldGenerateVideo = false;
 
-    if (!asset) {
+      if (!asset) {
       // Asset doesn't exist - create new one
-      asset = await tx.videoAsset.create({
+        asset = await tx.videoAsset.create({
+          data: {
+            name: normalizedName,
+            status: 'PENDING',
+          },
+        });
+        shouldGenerateVideo = true;
+        logger.info({ userId, assetId: asset.id, childName, normalizedName }, '🆕 New VideoAsset created');
+      }
+      else {
+      // Asset exists - check its status and cache validity
+        logger.info({ userId, assetId: asset.id, status: asset.status, childName }, '📦 Found existing VideoAsset');
+
+        if (asset.status === 'AVAILABLE' && asset.telegramFileId !== null && !isCacheExpired(asset.createdAt)) {
+        // Cache hit! Video is ready and not expired
+          logger.info({ userId, assetId: asset.id, childName }, '⚡ Cache hit - video ready for instant delivery');
+
+          // Create UserRequest as COMPLETED
+          await tx.userRequest.create({
+            data: {
+              userId,
+              assetId: asset.id,
+              status: 'COMPLETED',
+              childAge,
+            },
+          });
+
+          return {
+            type: 'send_cached' as const,
+            fileId: asset.telegramFileId,
+            assetName: asset.name,
+          };
+        }
+        else if (asset.status === 'PENDING' || asset.status === 'GENERATING') {
+        // Video is currently being generated - subscribe to result
+          logger.info({ userId, assetId: asset.id, childName }, '🔔 Video is being generated - subscribing user');
+
+          await tx.userRequest.create({
+            data: {
+              userId,
+              assetId: asset.id,
+              status: 'PENDING',
+              childAge,
+            },
+          });
+
+          return { type: 'subscribed' as const };
+        }
+        else if (asset.status === 'FAILED' || (asset.status === 'AVAILABLE' && isCacheExpired(asset.createdAt))) {
+        // Video generation failed or cache expired - regenerate
+          const reason = asset.status === 'FAILED' ? 'failed' : 'expired';
+          logger.info({ userId, assetId: asset.id, childName, reason }, '🔄 Regenerating video');
+
+          // Reset asset to PENDING and clear old file_id
+          await tx.videoAsset.update({
+            where: { id: asset.id },
+            data: {
+              status: 'PENDING',
+              telegramFileId: null,
+            },
+          });
+
+          shouldGenerateVideo = true;
+        }
+      }
+
+      // Create UserRequest for new generation or regeneration
+      await tx.userRequest.create({
         data: {
-          name: normalizedName,
+          userId,
+          assetId: asset.id,
           status: 'PENDING',
+          childAge,
         },
       });
-      shouldGenerateVideo = true;
-      logger.info({ userId, assetId: asset.id, childName, normalizedName }, '🆕 New VideoAsset created');
-    }
-    else {
-      // Asset exists - check its status and cache validity
-      logger.info({ userId, assetId: asset.id, status: asset.status, childName }, '📦 Found existing VideoAsset');
 
-      if (asset.status === 'AVAILABLE' && asset.telegramFileId !== null && !isCacheExpired(asset.createdAt)) {
-        // Cache hit! Video is ready and not expired
-        logger.info({ userId, assetId: asset.id, childName }, '⚡ Cache hit - video ready for instant delivery');
-
-        // Create UserRequest as COMPLETED
-        await tx.userRequest.create({
-          data: {
-            userId,
-            assetId: asset.id,
-            status: 'COMPLETED',
-            childAge,
-          },
-        });
-
-        return {
-          type: 'send_cached' as const,
-          fileId: asset.telegramFileId,
-          assetName: asset.name,
-        };
+      if (shouldGenerateVideo) {
+        return { type: 'generate' as const, assetId: asset.id };
       }
-      else if (asset.status === 'PENDING' || asset.status === 'GENERATING') {
-        // Video is currently being generated - subscribe to result
-        logger.info({ userId, assetId: asset.id, childName }, '🔔 Video is being generated - subscribing user');
 
-        await tx.userRequest.create({
-          data: {
-            userId,
-            assetId: asset.id,
-            status: 'PENDING',
-            childAge,
-          },
-        });
-
-        return { type: 'subscribed' as const };
-      }
-      else if (asset.status === 'FAILED' || (asset.status === 'AVAILABLE' && isCacheExpired(asset.createdAt))) {
-        // Video generation failed or cache expired - regenerate
-        const reason = asset.status === 'FAILED' ? 'failed' : 'expired';
-        logger.info({ userId, assetId: asset.id, childName, reason }, '🔄 Regenerating video');
-
-        // Reset asset to PENDING and clear old file_id
-        await tx.videoAsset.update({
-          where: { id: asset.id },
-          data: {
-            status: 'PENDING',
-            telegramFileId: null,
-          },
-        });
-
-        shouldGenerateVideo = true;
-      }
-    }
-
-    // Create UserRequest for new generation or regeneration
-    await tx.userRequest.create({
-      data: {
-        userId,
-        assetId: asset.id,
-        status: 'PENDING',
-        childAge,
-      },
+      // This shouldn't happen, but just in case
+      return { type: 'subscribed' as const };
+    }, {
+      isolationLevel: 'Serializable', // Prevent race conditions
     });
-
-    if (shouldGenerateVideo) {
-      return { type: 'generate' as const, assetId: asset.id };
-    }
-
-    // This shouldn't happen, but just in case
-    return { type: 'subscribed' as const };
-  }, {
-    isolationLevel: 'Serializable', // Prevent race conditions
   });
 }
 
@@ -266,7 +309,7 @@ export async function greetingConversation(
 
       // Check for cancellation
       if (phoneCtx.message?.text === '/cancel') {
-        await ctx.reply('❌ Диалог отменён. Введите /start для повтора.', {
+        await phoneCtx.reply('❌ Диалог отменён. Введите /start для повтора.', {
           reply_markup: { remove_keyboard: true },
         });
         return;
@@ -278,13 +321,13 @@ export async function greetingConversation(
         phoneReceived = true;
 
         // Remove keyboard after receiving contact
-        await ctx.reply('✅ Спасибо! Номер телефона получен.', {
+        await phoneCtx.reply('✅ Спасибо! Номер телефона получен.', {
           reply_markup: { remove_keyboard: true },
         });
       }
       else {
         // User sent text instead of sharing contact
-        await ctx.reply('⚠️ Некорректный номер телефона. Пожалуйста, используйте кнопку "Поделиться номером телефона".');
+        await phoneCtx.reply('⚠️ Некорректный номер телефона. Пожалуйста, используйте кнопку "Поделиться номером телефона".');
         // Loop will restart and ask for phone again
       }
     }
@@ -330,7 +373,7 @@ export async function greetingConversation(
 
     // Check for cancellation
     if (nameCtx.message?.text === '/cancel') {
-      await ctx.reply('❌ Диалог отменён. Введите /start для повтора.');
+      await nameCtx.reply('❌ Диалог отменён. Введите /start для повтора.');
       logger.info({ userId: ctx.from!.id, conversationId }, '🔴 CONVERSATION CANCELLED');
       return;
     }
@@ -340,7 +383,7 @@ export async function greetingConversation(
 
     // Check if we have text
     if (inputName === undefined || inputName === '') {
-      await ctx.reply('⚠️ Имя слишком короткое! Пожалуйста, введите имя длиной не менее 2 символов.');
+      await nameCtx.reply('⚠️ Имя слишком короткое! Пожалуйста, введите имя длиной не менее 2 символов.');
       continue;
     }
 
@@ -355,7 +398,7 @@ export async function greetingConversation(
         'greeting-name-multiple-words': '⚠️ Имя должно содержать только одно слово.',
         'greeting-name-inappropriate': '⚠️ Это имя содержит недопустимые выражения. Пожалуйста, введите другое имя.',
       };
-      await ctx.reply(errorMessages[validation.errorKey!] || 'Ошибка валидации');
+      await nameCtx.reply(errorMessages[validation.errorKey!] || 'Ошибка валидации');
       continue; // Ask again
     }
 
@@ -409,7 +452,7 @@ export async function greetingConversation(
 
     // Check for cancellation
     if (ageCtx.message?.text === '/cancel') {
-      await ctx.reply('❌ Диалог отменён. Введите /start для повтора.');
+      await ageCtx.reply('❌ Диалог отменён. Введите /start для повтора.');
       logger.info({ userId: ctx.from!.id, conversationId }, '🔴 CONVERSATION CANCELLED at age step');
       return;
     }
@@ -419,7 +462,7 @@ export async function greetingConversation(
 
     // Validate age
     if (Number.isNaN(parsedAge) || parsedAge < MIN_CHILD_AGE || parsedAge > MAX_CHILD_AGE) {
-      await ctx.reply(`⚠️ Пожалуйста, введите корректный возраст от ${MIN_CHILD_AGE} до ${MAX_CHILD_AGE} лет.`);
+      await ageCtx.reply(`⚠️ Пожалуйста, введите корректный возраст от ${MIN_CHILD_AGE} до ${MAX_CHILD_AGE} лет.`);
       continue;
     }
 
